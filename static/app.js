@@ -1899,6 +1899,8 @@ const ROUTES = [
 async function route() {
   const h = location.hash || "#/";
   $$("#nav a").forEach(a => { const href = a.getAttribute("href"); a.classList.toggle("active", h === href || h.startsWith(href + "/")); });
+  const act = $("#nav a.active");  // on phones the nav scrolls sideways; keep the current page in view
+  if (act && act.parentElement.scrollWidth > act.parentElement.clientWidth) act.parentElement.scrollLeft = act.offsetLeft - 40;
   const view = $("#view");
   for (const [re, fn] of ROUTES) {
     const m = h.match(re);

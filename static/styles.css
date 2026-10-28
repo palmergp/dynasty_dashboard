@@ -51,6 +51,7 @@ main { max-width: 1400px; margin: 0 auto; padding: 18px 20px 60px; }
 
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
 .grid { display: grid; gap: 14px; }
+.grid > * { min-width: 0; }  /* let grid columns shrink instead of overflowing the page */
 .g2 { grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
 .g3 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
 .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
@@ -189,6 +190,16 @@ table.heat th.num { text-align: center; }
   main { padding: 12px 16px 40px; }
   .g2 { grid-template-columns: 1fr; }
   .sugg .sides, .tsides { grid-template-columns: 1fr !important; }
+  /* Header: one swipeable row of links instead of five wrapped rows. */
+  .topbar { padding: 8px 12px 6px; gap: 4px 12px; }
+  .brand { font-size: 13px; }
+  nav { flex-wrap: nowrap; overflow-x: auto; width: 100%; scrollbar-width: none; }
+  nav::-webkit-scrollbar { display: none; }
+  nav a { white-space: nowrap; }
+  /* Wide tables scroll inside their card. */
+  table { display: block; overflow-x: auto; }
+  .scroll > table { display: table; }
+  .tile .v, .record .v { font-size: 19px; }
 }
 
 /* breakout watch */
@@ -208,10 +219,11 @@ h2.sec { margin: 18px 0 8px; }
 .record .holder { font-size: 15px; }
 .record .mine, .tile.mine { color: var(--accent); }
 .tile.mine { border-color: var(--accent); }
-.runners { margin: 8px 0 0; padding-left: 20px; font-size: 12px; }
-.runners li { padding: 2px 0; }
-.runners li > span:first-child { display: inline; }
-.runners li > .num { float: right; font-weight: 600; }
+.runners { margin: 8px 0 0; padding-left: 0; list-style: none; font-size: 12px; counter-reset: rank 1; }
+.runners li { padding: 2px 0; display: grid; grid-template-columns: 1.6em 1fr auto; column-gap: 6px; align-items: start; }
+.runners li::before { counter-increment: rank; content: counter(rank) "."; color: var(--muted); }
+.runners li > .num { font-weight: 600; white-space: nowrap; }
+.runners li > details { grid-column: 1 / -1; }
 .rec-more { margin-top: 6px; font-size: 12px; }
 .rec-more summary { cursor: pointer; color: var(--accent); }
 .rec-trade { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 6px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; }

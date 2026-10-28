@@ -314,7 +314,7 @@ function scatter(host, opts) {
   // League-average reference lines split the plot into quadrants.
   if (opts.refX != null) svg.append(svgEl("line", { x1: x(opts.refX), x2: x(opts.refX), y1: m.t, y2: m.t + ih, stroke: "var(--axis)", "stroke-width": 1 }));
   if (opts.refY != null) svg.append(svgEl("line", { x1: m.l, x2: m.l + iw, y1: y(opts.refY), y2: y(opts.refY), stroke: "var(--axis)", "stroke-width": 1 }));
-  const q = opts.quadrants || {};
+  const q = iw >= 360 ? opts.quadrants || {} : {};  // no room for corner labels on narrow screens
   [["tl", m.l + 6, m.t + 14, "start"], ["tr", m.l + iw - 6, m.t + 14, "end"], ["bl", m.l + 6, m.t + ih - 8, "start"], ["br", m.l + iw - 6, m.t + ih - 8, "end"]]
     .forEach(([k, qx, qy, anchor]) => { if (!q[k]) return; const t = svgEl("text", { x: qx, y: qy, "text-anchor": anchor, "font-size": 11, fill: "var(--chart-muted)", "font-style": "italic" }); t.textContent = q[k]; svg.append(t); });
 
