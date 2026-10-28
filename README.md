@@ -76,6 +76,7 @@ Run `git pull` (or download a fresh ZIP), then start the app again as usual. The
 | **Waivers › team** | One team's pickup tiles and ranks, its pickup value vs. the league median, and every pickup with value at pickup, peak while held, value now, value captured, start points, a sparkline and the outcome. |
 | **Drafts › team** | One team's draft-class value vs. the league median, stat tiles, every pick with its draft-day value, current value, sparkline and status (on roster, traded, dropped), and its roster construction. |
 | **Record Book** | All-time records: champions, all-time standings (titles, finals, record, points), highest and lowest scores, biggest blowouts and closest games, best seasons, best single-game and "franchise player" performances, biggest trade fleeces (today, at the time, and reversals), best and worst draft classes, draft steals and busts, and best pickups. Your entries are highlighted. |
+| **Player page** | Click any player's name. Shows his value history, notes and breakout score, a sell-timing verdict (sell now / within a year / hold / rising with age), and his projected value vs. peers over the next 3 years. It also charts the typical value change by age at his position. The Players table has an *Age outlook* column for scanning. |
 | **Settings** | Source weights, stud premium, pick multipliers per round, and a data refresh. |
 
 ## Restarted leagues (linked history)
@@ -172,6 +173,12 @@ One install can hold several leagues. Each league you've opened is saved under *
   - The suggested drop is your active player with the lowest pickup score. Open roster or taxi spots are used first.
   - The suggested bid is the median winning bid on the 8 most similar-value claims in this league over the last two seasons.
 - **In trades:** rebuilding teams value breakout upside up to 15% more, and suggestions call out "buy before a breakout" targets. Player notes include contract and breakout signals.
+
+**Sell timing** (`app/aging.py`)
+- From about four years of weekly values, each player worth 800+ is compared with his value a year later.
+- Raw changes are negative at almost every age, because each rookie class pushes everyone down and valuable players drift back toward the middle. So each change is divided by the typical change for players at the same position and value level. What's left is the age effect.
+- The median by position and age, smoothed across neighboring ages, is the curve. On it, RBs start falling behind peers around 25–26, WRs around 27, and TEs around 31.
+- Verdicts: **sell now** at 12%+ expected loss vs. peers over a year, **sell within a year** at 6%+ (or 15%+ over two years), **rising** at a 6%+ gain, and **hold** otherwise.
 
 **Playoff odds** (`app/season.py`)
 - Each team's weekly mean is its best possible lineup from Sleeper's player projections for that week, so byes and injuries count. Scores vary by the league's own week-to-week spread (the standard deviation of teams' scores around their averages).

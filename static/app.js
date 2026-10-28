@@ -468,7 +468,7 @@ async function viewTeam(rid) {
       <thead><tr><th></th><th>Player</th><th class="num">Value</th><th class="num">Win-now</th><th class="num">FC</th><th class="num">KTC</th><th class="num">DP</th></tr></thead>
       <tbody>${t.players.map(a => `<tr>
         <td>${posBadge(a.pos)}</td>
-        <td><b>${esc(a.name)}</b> ${a.starter ? '<span class="badge tag">starter</span>' : ""}${t.sell_candidates.includes(a.id) ? ' <span class="badge w-rebuild">sell?</span>' : ""}${a.breakout >= 35 ? ` <span class="badge tag" ${tipAttr(HELP.breakout)}>breakout ${a.breakout}</span>` : ""}
+        <td><b>${playerLink(a.id, a.name)}</b> ${a.starter ? '<span class="badge tag">starter</span>' : ""}${t.sell_candidates.includes(a.id) ? ' <span class="badge w-rebuild">sell?</span>' : ""}${a.breakout >= 35 ? ` <span class="badge tag" ${tipAttr(HELP.breakout)}>breakout ${a.breakout}</span>` : ""}
           <div class="muted small">${assetMeta(a)}</div>
           ${a.notes.length || a.user_note ? `<ul class="notes">${a.user_note ? `<li><b>You:</b> ${esc(a.user_note)}</li>` : ""}${a.notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}</td>
         <td class="num"><b>${fmt(a.value)}</b></td><td class="num">${fmt(a.redraft)}</td>
@@ -529,7 +529,7 @@ async function viewPlayers() {
       <div class="row"><input id="p-q" placeholder="Search name / team / owner"><select id="p-pos"><option value="">All positions</option>${["QB", "RB", "WR", "TE"].map(p => `<option>${p}</option>`).join("")}</select>
       <label class="small"><input type="checkbox" id="p-disagree"> Sources disagree</label></div></div>
     <p class="muted small">Values are blended FantasyCalc / KeepTradeCut / DynastyProcess on a common 0–10,000 curve. Set an override to use your own value everywhere (trade evaluation, suggestions). Clear the field to remove it.</p>
-    <div class="scroll"><table id="p-table"><thead><tr><th></th><th>Player</th><th>Owner</th><th class="num">Value</th><th class="num">Win-now</th><th class="num">FC</th><th class="num">KTC</th><th class="num">DP</th><th class="num">30d</th><th class="num">${hint("Breakout", HELP.breakout)}</th><th>Your override</th><th>Your note</th></tr></thead><tbody></tbody></table></div>
+    <div class="scroll"><table id="p-table"><thead><tr><th></th><th>Player</th><th>Owner</th><th class="num">Value</th><th class="num">Win-now</th><th class="num">FC</th><th class="num">KTC</th><th class="num">DP</th><th class="num">30d</th><th class="num">${hint("Breakout", HELP.breakout)}</th><th>${hint("Age outlook", HELP.ageOutlook)}</th><th>Your override</th><th>Your note</th></tr></thead><tbody></tbody></table></div>
   </div>`;
 }
 function wirePlayers() {
@@ -540,13 +540,14 @@ function wirePlayers() {
       && (!dis || a.notes.some(n => n.startsWith("Sources disagree")))).slice(0, 400);
     $("#p-table tbody").innerHTML = rows.map(a => `<tr>
       <td>${posBadge(a.pos)}</td>
-      <td><b>${esc(a.name)}</b> <span class="muted small">${assetMeta(a)}</span>${a.notes.length ? `<ul class="notes">${a.notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}</td>
+      <td><b>${playerLink(a.id, a.name)}</b> <span class="muted small">${assetMeta(a)}</span>${a.notes.length ? `<ul class="notes">${a.notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}</td>
       <td><a href="#/team/${a.owner_rid}">${esc(a.owner)}</a></td>
       <td class="num"><b>${fmt(a.value)}</b>${a.override != null ? `<div class="muted small">mkt ${fmt(a.market)}</div>` : ""}</td>
       <td class="num">${fmt(a.redraft)}</td>
       <td class="num">${fmt(a.sources.fantasycalc)}</td><td class="num">${fmt(a.sources.ktc)}</td><td class="num">${fmt(a.sources.dynastyprocess)}</td>
       <td class="num ${signCls(a.trend)}">${a.trend ? (a.trend > 0 ? "+" : "") + fmt(a.trend) : ""}</td>
       <td class="num" data-sort="${a.breakout ?? 0}">${a.breakout ? `<span class="${a.breakout >= 40 ? "bo-hi" : ""}">${a.breakout}</span>` : '<span class="muted">0</span>'}</td>
+      <td data-sort="${a.age_outlook ? a.age_outlook.y1_pct : ""}">${a.age_outlook ? `${verdictBadge(a.age_outlook)} <span class="small muted">${a.age_outlook.y1_pct > 0 ? "+" : ""}${a.age_outlook.y1_pct.toFixed(0)}%</span>` : ""}</td>
       <td><input type="number" class="ov" data-id="${a.id}" value="${a.override ?? ""}" placeholder="${Math.round(a.market)}"></td>
       <td><input class="pn" data-id="${a.id}" value="${esc(a.user_note)}" placeholder="Add note…" style="width:200px"></td></tr>`).join("");
     $$(".ov").forEach(inp => inp.onchange = async () => {
@@ -1365,7 +1366,7 @@ function contractCell(a, season) {
   return `<td data-sort="${c.end}"><span class="has-tip ${c.end <= season ? "delta-neg" : ""}" ${tipAttr(tip)}>${c.end}</span>${c.apy ? `<div class="muted small">$${c.apy.toFixed(1)}M/yr</div>` : ""}</td>`;
 }
 const metaLine = a => `<div class="muted small">${assetMeta(a)}${a.years_exp != null ? ` · yr ${a.years_exp + 1}` : ""}</div>`;
-const playerCell = a => `<td><b>${esc(a.name)}</b>${metaLine(a)}</td>`;
+const playerCell = a => `<td><b>${playerLink(a.id, a.name)}</b>${metaLine(a)}</td>`;
 const usageNote = W => W.weeks ? `usage from weeks 1–${W.weeks} of ${W.role_season}` : "no usage data yet";
 
 async function pickupsData() {
@@ -1827,13 +1828,68 @@ function drawDraftPrep(D) {
   onResize(draw);
 }
 
+// ---------------------------------------------------------------- player page
+const VERDICT = {
+  sell: ["Sell now", "acc-Unlikely"], soon: ["Sell within a year", "acc-Possible"],
+  hold: ["Hold", "res-even"], rising: ["Rising with age", "acc-Likely"],
+};
+Object.assign(HELP, {
+  ageOutlook: "How a player's value typically changes over the next year at his age, compared with other players at his position and value level. From about four years of weekly value history. Negative = his age is working against him.",
+  ageCurve: "Typical one-year change in value at each age, compared with players at the same position and value level. Bars below zero are ages where value usually falls faster than for peers. His current age is outlined.",
+});
+const verdictBadge = o => o ? `<span class="badge ${VERDICT[o.verdict][1]}" ${tipAttr(HELP.ageOutlook)}>${VERDICT[o.verdict][0]}</span>` : "";
+const playerLink = (id, name) => `<a href="#/player/${esc(id)}">${esc(name)}</a>`;
+
+async function viewPlayer(pid) {
+  const P = await api(`/api/player/${encodeURIComponent(pid)}`);
+  const a = P.player, o = P.outlook;
+  setTimeout(() => drawPlayer(P), 0);
+  return `<div class="card"><div class="row spread">
+      <div><h1>${posBadge(a.pos)} ${esc(a.name)} ${verdictBadge(o)}</h1>
+        <div class="muted">${assetMeta(a)}${a.years_exp != null ? ` · year ${a.years_exp + 1}` : ""} · ${P.owner ? (P.is_mine ? "<b>your roster</b>" : `on <a href="#/team/${P.owner_rid}">${esc(P.owner)}</a>`) : "free agent"}</div></div>
+      <div class="row">
+        <div class="stat"><div class="k">Dynasty value</div><div class="v">${fmt(a.value)}</div></div>
+        <div class="stat"><div class="k">Win-now</div><div class="v">${fmt(a.redraft)}</div></div>
+        ${a.breakout ? `<div class="stat"><div class="k">${hint("Breakout", HELP.breakout)}</div><div class="v">${a.breakout}</div></div>` : ""}
+        ${P.owner && !P.is_mine ? `<button class="primary" onclick='openInEvaluator(${JSON.stringify({ b: P.owner_rid, aGives: [], bGives: [{ kind: "player", id: a.id }] })})'>Trade for him</button>` : ""}
+      </div></div>
+    ${a.notes && a.notes.length ? `<ul class="notes">${a.notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}
+  </div>
+  <div class="grid g2">
+    <div class="card"><h2>Value history</h2><div id="pl-line"></div>
+      <p class="muted small">Weekly DynastyProcess values on the app's scale, so they can differ a little from the blended value above.</p></div>
+    <div class="card"><h2>Sell timing</h2>
+      ${o ? `<p><b>${VERDICT[o.verdict][0]}.</b> ${esc(o.why)}</p>
+        <table data-nosort><thead><tr><th>In</th><th class="num">Age</th><th class="num">Value vs. peers</th><th class="num">Change</th></tr></thead>
+        <tbody><tr><td>Now</td><td class="num">${a.age}</td><td class="num">${fmt(a.value)}</td><td></td></tr>
+          ${o.path.map(p => `<tr><td>${p.years} year${p.years > 1 ? "s" : ""}</td><td class="num">${p.age}</td><td class="num">${fmt(p.value)}</td><td class="num ${signCls(p.change_pct)}">${p.change_pct > 0 ? "+" : ""}${p.change_pct.toFixed(0)}%</td></tr>`).join("")}</tbody></table>
+        <p class="muted small">"Value vs. peers" applies the typical age effect only. It assumes he performs like a typical player his age, so injuries, role changes and breakouts aren't included.</p>` : '<p class="muted">Not enough age data for this player.</p>'}
+      <h3>${hint(`Typical ${a.pos} value change by age`, HELP.ageCurve)}</h3><div id="pl-curve"></div>
+    </div>
+  </div>`;
+}
+function drawPlayer(P) {
+  const line = $("#pl-line");
+  if (!line) return;
+  const first = P.history.findIndex(v => v != null);
+  const drawLine = () => first < 0 ? (line.innerHTML = '<p class="muted">No value history for this player.</p>') : lineChart(line, {
+    dates: P.dates.slice(first), series: [{ id: P.player.id, label: P.player.name, values: P.history.slice(first), highlight: true, color: "var(--series-1)" }],
+    format: compact, height: 260, title: `${P.player.name} value history` });
+  const age = P.player.age != null ? Math.floor(P.player.age) : null;
+  const items = P.curve.filter(c => c.age >= 20 && c.age <= 36).map(c => ({ label: String(c.age), value: (c.ratio - 1) * 100, highlight: c.age === age,
+    tip: [{ color: c.ratio >= 1 ? "var(--div-s2)" : "var(--div-n2)", value: `${c.ratio >= 1 ? "+" : ""}${((c.ratio - 1) * 100).toFixed(0)}%`, label: `vs. peers · ${c.n} samples` }] }));
+  const drawCurve = () => divergingColumns($("#pl-curve"), { items, xLabel: "Age", title: `Typical ${P.player.pos} value change by age` });
+  drawLine(); drawCurve();
+  onResize(drawLine, drawCurve);
+}
+
 // ---------------------------------------------------------------- router
 const ROUTES = [
   [/^#?\/?$/, viewDashboard], [/^#\/partners$/, viewPartners], [/^#\/trade$/, viewTrade],
   [/^#\/team(?:\/(\d+))?$/, viewTeam], [/^#\/players$/, viewPlayers], [/^#\/history$/, viewHistory],
   [/^#\/drafts$/, viewDrafts], [/^#\/drafts\/(\d+)$/, viewDraftTeam],
   [/^#\/waivers$/, viewWaivers], [/^#\/waivers\/(\d+)$/, viewWaiverTeam],
-  [/^#\/rankings$/, viewRankings], [/^#\/records$/, viewRecords], [/^#\/season$/, viewSeason], [/^#\/draftprep$/, viewDraftPrep], [/^#\/pickups$/, viewPickups], [/^#\/breakouts$/, viewBreakouts],
+  [/^#\/rankings$/, viewRankings], [/^#\/records$/, viewRecords], [/^#\/season$/, viewSeason], [/^#\/player\/(\w+)$/, viewPlayer], [/^#\/draftprep$/, viewDraftPrep], [/^#\/pickups$/, viewPickups], [/^#\/breakouts$/, viewBreakouts],
   [/^#\/settings$/, viewSettings],
 ];
 async function route() {

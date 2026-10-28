@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, draftprep, drafts, feed, opportunity, pickups, rankings, records, retro, season, store, suggest, trade, waivers
+from . import aging, config, draftprep, drafts, feed, opportunity, pickups, rankings, records, retro, season, store, suggest, trade, waivers
 from .config import ROOT
 from .league import League
 from .values import SOURCE_LABELS
@@ -118,15 +118,44 @@ def team(rid: int):
     return _clean(out)
 
 
+def _aging(lg):
+    return _memo("aging", lg, lambda: aging.build(lg))
+
+
 @app.get("/api/players")
 def players():
     lg = league()
+    curve = _aging(lg)["curve"]
     rows = []
     for t in lg.teams.values():
         for a in t["players"]:
-            rows.append({**a, "owner": t["manager"], "owner_rid": t["roster_id"]})
+            o = aging.outlook(curve, a["pos"], a["age"], a["value"])
+            rows.append({**a, "owner": t["manager"], "owner_rid": t["roster_id"],
+                         "age_outlook": {"verdict": o["verdict"], "y1_pct": o["y1_pct"]} if o else None})
     rows.sort(key=lambda a: -a["value"])
     return _clean(rows)
+
+
+@app.get("/api/player/{pid}")
+def player(pid: str):
+    lg = league()
+    if pid not in lg.players_db:
+        raise HTTPException(404, "No such player")
+    from .league import player_notes
+    owner = next((t for t in lg.teams.values() for a in t["players"] if a["id"] == pid), None)
+    a = next((x for x in owner["players"] if x["id"] == pid), None) if owner else lg.annotate(lg.player_asset(pid))
+    if not owner:
+        a["notes"] = player_notes(a, lg)
+    A = _aging(lg)
+    hist = A["hist"]
+    series = hist["values"].get(pid) or [None] * len(hist["dates"])
+    return _clean({
+        "player": a, "owner": owner["manager"] if owner else None, "owner_rid": owner["roster_id"] if owner else None,
+        "is_mine": bool(owner and lg.me and owner["roster_id"] == lg.me["roster_id"]),
+        "dates": hist["dates"], "history": [round(v) if v is not None else None for v in series],
+        "outlook": aging.outlook(A["curve"], a["pos"], a["age"], a["value"]),
+        "curve": [{"age": age, "ratio": r["ratio"], "n": r["n"]} for age, r in sorted((A["curve"].get(a["pos"]) or {}).items())],
+    })
 
 
 @app.get("/api/picks")

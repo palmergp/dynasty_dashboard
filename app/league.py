@@ -327,7 +327,7 @@ def player_notes(a: dict, lg: "League") -> list[str]:
     o = a.get("opp")
     if o:
         c = o.get("contract") or {}
-        if c.get("leave_why"):
+        if c.get("leave_why") and not c["leave_why"].startswith("Age "):  # age is covered above
             notes.append(c["leave_why"] + ".")
         elif c.get("end") is not None and c["end"] <= lg.season:
             notes.append(f"Contract ends after {lg.season}.")

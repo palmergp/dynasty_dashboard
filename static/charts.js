@@ -244,6 +244,49 @@ function rangeTicks(lo, hi, count = 5) {
  *   xFormat, yFormat, refX, refY, quadrants:{tl,tr,bl,br}, height})
  * Every point is direct-labeled where it fits (collision-checked); hit targets are 28px.
  */
+// Vertical bars around a zero line, e.g. % change by age. items: [{label, value, highlight, tip}].
+// Above zero uses the diverging palette's positive pole, below zero the negative pole.
+function divergingColumns(host, opts) {
+  const { items, format = v => `${v > 0 ? "+" : ""}${Math.round(v)}%`, height = 220 } = opts;
+  host.classList.add("chart");
+  host.replaceChildren();
+  const W = Math.max(320, host.clientWidth), H = height;
+  const m = { l: 44, r: 10, t: 12, b: 34 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const lim = Math.max(10, ...items.map(d => Math.abs(d.value)));
+  const ticks = niceTicks(lim);
+  const top = ticks[ticks.length - 1];
+  const y = v => m.t + ih / 2 - v / top * (ih / 2);
+  const bw = iw / items.length, barW = Math.max(4, Math.min(28, bw - 2));
+  const svg = svgEl("svg", { width: W, height: H, role: "img", "aria-label": opts.title || "Column chart" });
+  for (const tv of [-top, -top / 2, 0, top / 2, top]) {
+    svg.append(svgEl("line", { x1: m.l, x2: m.l + iw, y1: y(tv), y2: y(tv), stroke: tv === 0 ? "var(--axis)" : "var(--grid)", "stroke-width": 1 }));
+    const t = svgEl("text", { x: m.l - 6, y: y(tv) + 4, "text-anchor": "end", "font-size": 11, fill: "var(--chart-muted)" }); t.textContent = format(tv); svg.append(t);
+  }
+  const tip = document.createElement("div"); tip.className = "viz-tip"; tip.hidden = true;
+  items.forEach((d, i) => {
+    const cx = m.l + bw * i + bw / 2, y0 = y(0), y1 = y(d.value);
+    const h = Math.abs(y1 - y0), r = Math.min(4, h / 2, barW / 2);
+    const up = d.value >= 0, x0 = cx - barW / 2;
+    // Rounded at the data end only, square at the zero line.
+    const path = up
+      ? `M${x0},${y0} V${y1 + r} Q${x0},${y1} ${x0 + r},${y1} H${x0 + barW - r} Q${x0 + barW},${y1} ${x0 + barW},${y1 + r} V${y0} Z`
+      : `M${x0},${y0} V${y1 - r} Q${x0},${y1} ${x0 + r},${y1} H${x0 + barW - r} Q${x0 + barW},${y1} ${x0 + barW},${y1 - r} V${y0} Z`;
+    svg.append(svgEl("path", { d: path, fill: up ? "var(--div-s2)" : "var(--div-n2)", stroke: d.highlight ? "var(--text)" : "none", "stroke-width": d.highlight ? 2 : 0 }));
+    if (d.highlight || items.length <= 16 || i % 2 === 0) {
+      const t = svgEl("text", { x: cx, y: H - 16, "text-anchor": "middle", "font-size": 11, fill: d.highlight ? "var(--text)" : "var(--chart-muted)", "font-weight": d.highlight ? 700 : 400 });
+      t.textContent = d.label; svg.append(t);
+    }
+    const hit = svgEl("rect", { x: cx - bw / 2, y: m.t, width: bw, height: ih, fill: "transparent", tabindex: 0, class: "hit", "aria-label": `${d.label}: ${format(d.value)}` });
+    const show = () => { tipRows(tip, d.label, d.tip || [{ color: up ? "var(--div-s2)" : "var(--div-n2)", value: format(d.value), label: "" }]); placeTip(tip, host, cx, y1); };
+    hit.addEventListener("pointermove", show); hit.addEventListener("focus", show);
+    hit.addEventListener("pointerleave", () => (tip.hidden = true)); hit.addEventListener("blur", () => (tip.hidden = true));
+    svg.append(hit);
+  });
+  if (opts.xLabel) { const t = svgEl("text", { x: m.l + iw / 2, y: H - 2, "text-anchor": "middle", "font-size": 11, fill: "var(--chart-muted)" }); t.textContent = opts.xLabel; svg.append(t); }
+  host.append(svg, tip);
+}
+
 function scatter(host, opts) {
   const { points, xFormat = compact, yFormat = compact, height = 380 } = opts;
   host.classList.add("chart");
