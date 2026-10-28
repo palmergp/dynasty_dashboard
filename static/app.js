@@ -36,7 +36,7 @@ async function teamData(rid, force) {
 }
 function invalidate() {
   state.ov = null; state.teamCache = {}; state.draftsData = null; state.waiversData = null; state.rankingsData = null;
-  state.pickupsData = null; state.breakoutsData = null; state.reviewData = null;
+  state.pickupsData = null; state.breakoutsData = null; state.reviewData = null; state.recordsData = null;
 }
 
 // ---------------------------------------------------------------- help tooltips
@@ -1472,13 +1472,120 @@ function drawBreakouts(B, rows) {
   onResize(draw);
 }
 
+// ---------------------------------------------------------------- record book
+async function recordsData() {
+  if (!state.recordsData) state.recordsData = await api("/api/records");
+  return state.recordsData;
+}
+const pts2 = n => Number(n).toFixed(2);
+const wk = x => `${x.season} wk ${x.week}${x.playoffs ? " (playoffs)" : ""}`;
+// One record: the holder big, runners-up below. row(x) -> [holderHtml, valueHtml, detailHtml].
+// expand(x), if given, returns details HTML shown when an entry is expanded.
+function recordCard(title, help, rows, row, me, expand) {
+  if (!rows || !rows.length) return "";
+  const [top, ...rest] = rows;
+  const [h, v, d] = row(top);
+  const mine = x => x.manager === me || x.winner === me || x.loser === me || x.champion === me;
+  const more = x => expand ? `<details class="rec-more"><summary>Show trade</summary>${expand(x)}</details>` : "";
+  return `<div class="card record">
+    <div class="k">${help ? hint(esc(title), help) : esc(title)}</div>
+    <div class="row spread"><div class="holder ${mine(top) ? "mine" : ""}">${h}</div><div class="v">${v}</div></div>
+    <div class="muted small">${d}</div>${more(top)}
+    ${rest.length ? `<ol class="runners" start="2">${rest.map(x => { const [rh, rv, rd] = row(x);
+      return `<li class="${mine(x) ? "mine" : ""}"><span>${rh} <span class="muted">${rd}</span></span><span class="num">${rv}</span>${more(x)}</li>`; }).join("")}</ol>` : ""}
+  </div>`;
+}
+// One side of a trade: what that manager received, valued then and now. Picks show who they became.
+function tradeAssetsHTML(x) {
+  const asset = a => {
+    const p = a.pick;
+    const label = p ? `${esc(p.label)}${p.orig ? ` <span class="muted">(${esc(p.orig)}'s)</span>` : ""}${p.became ? `<div class="became">→ ${posBadge(p.became_pos)} ${esc(p.became)}</div>` : '<div class="became muted">not used yet</div>'}` : esc(a.name);
+    return `<tr><td>${posBadge(p ? "PICK" : a.pos)}</td><td>${label}</td><td class="num muted">${fmt(a.then)} →</td><td class="num"><b>${fmt(a.now)}</b></td></tr>`;
+  };
+  return `<div class="rec-trade">${x.sides.map(s => `<div><div class="side-h">${esc(s.manager)} got</div>
+    <table data-nosort class="small"><tbody>${s.received.map(asset).join("") || '<tr><td class="muted">Nothing</td></tr>'}</tbody></table>
+    ${s.faab ? `<div class="small muted">+ $${s.faab} FAAB</div>` : ""}<div class="small muted">${fmt(s.points)} start points from these players</div></div>`).join("")}
+    <div class="small muted rec-gaps">At the time: ${x.then_gap.leader ? `${esc(x.then_gap.leader)} +${fmt(x.then_gap.gap)}` : "even"} · Today: ${x.now_gap.leader ? `${esc(x.now_gap.leader)} +${fmt(x.now_gap.gap)}` : "even"} · <a href="#/history">Trade review</a></div></div>`;
+}
+Object.assign(HELP, {
+  titles: "Championships: winners of the final in Sleeper's playoff bracket.",
+  finals: "Appearances in the championship game.",
+  allTimeRecord: "Regular-season games only, across every season in the league's history (including linked leagues before a restart).",
+  franchisePlayer: "Most fantasy points one player scored in one manager's starting lineup, summed across every season.",
+  classChange: "Value now of every player the team drafted in that class vs. their value on draft day, in %. Startup and rookie drafts are ranked separately.",
+  swing: "How far the trade moved: the gap for the side ahead at the time plus the gap for the side ahead today.",
+});
+
+async function viewRecords() {
+  const [R, ov] = await Promise.all([recordsData(), overview()]);
+  const me = (ov.teams.find(t => t.is_me) || {}).manager;
+  const G = R.games, S = R.season_records, P = R.players, T = R.trades, D = R.drafts, W = R.pickups;
+  const early = c => c.early ? ` <span class="badge res-even" ${tipAttr(`Value history starts ${R.value_history_start}, so this class is measured from then, not from draft day.`)}>since ${esc(R.value_history_start)}</span>` : "";
+  const tradeRow = x => [`<b>${esc(x.winner)}</b> over ${esc(x.loser || "")}`, `+${fmt(x.gap)}`,
+    `${esc(x.date)} · ${x.pct.toFixed(0)}% of the deal`];
+  const classRow = x => [`<b>${esc(x.manager)}</b>${early(x)}`, `${x.change_pct > 0 ? "+" : ""}${x.change_pct.toFixed(1)}%`,
+    `${esc(x.draft)} · ${x.n} picks · ${fmt(x.draft_value)} → ${fmt(x.now_value)}${x.best ? ` · best: ${esc(x.best.name)}` : ""}`];
+  const pickRow = x => [`${posBadge(x.pos)} <b>${esc(x.name)}</b>`, signed(x.change), `${esc(x.manager)} · ${esc(x.draft)} ${esc(x.pick)} · ${fmt(x.draft_value)} → ${fmt(x.now_value)}`];
+  const wvRow = (x, v) => [`${posBadge(x.pos)} <b>${esc(x.name)}</b>`, v, `${esc(x.manager)} · ${esc(x.date)} · ${x.type === "claim" ? `claim $${x.bid}` : "free agent"} · ${esc(x.outcome)}`];
+  const section = (title, cards) => { const body = cards.join(""); return body ? `<h2 class="sec">${title}</h2><div class="grid g3">${body}</div>` : ""; };
+  return `<div class="card"><h1>Record book</h1>
+    <p class="muted">All-time records across ${R.seasons.length} season${R.seasons.length === 1 ? "" : "s"} (${[...R.seasons].sort().join(", ")}) and ${fmt(R.n_games)} games.
+      Each team is credited to whoever managed it that season. Your entries are highlighted.
+      Trade, draft and pickup records use the weekly value history, which starts ${esc(R.value_history_start || "–")}.</p>
+    ${R.champions.length ? `<div class="tiles">${R.champions.map(c => `<div class="tile ${c.champion === me ? "mine" : ""}"><div class="k">${c.season} champion</div>
+      <div class="v">🏆 ${esc(c.champion)}</div><div class="d muted">runner-up ${esc(c.runner_up)}</div></div>`).join("")}</div>` : '<p class="muted">No completed seasons yet.</p>'}
+  </div>
+  <div class="card"><h2>All-time standings</h2><div class="scroll"><table>
+    <thead><tr><th>Manager</th><th class="num">Seasons</th><th class="num">${hint("Titles", HELP.titles)}</th><th class="num">${hint("Finals", HELP.finals)}</th>
+      <th>${hint("Record", HELP.allTimeRecord)}</th><th class="num">Win %</th><th class="num">Points</th><th class="num">PPG</th><th class="num">Best game</th></tr></thead>
+    <tbody>${R.standings.map(s => `<tr class="${s.manager === me ? "me" : ""}"><td><b>${esc(s.manager)}</b></td><td class="num">${s.seasons}</td>
+      <td class="num">${s.titles ? "🏆".repeat(s.titles) : "0"}</td><td class="num">${s.finals}</td>
+      <td data-sort="${s.w - s.l}">${s.w}–${s.l}${s.t ? "–" + s.t : ""}</td><td class="num">${(s.win_pct * 100).toFixed(1)}%</td>
+      <td class="num">${fmt(s.pf)}</td><td class="num">${s.ppg.toFixed(1)}</td><td class="num">${pts2(s.high)}</td></tr>`).join("")}</tbody>
+  </table></div><p class="muted small">Sorted by titles, then win %. Click a column to sort.</p></div>
+  ${section("Games", [
+    recordCard("Highest score", "", G.high, x => [`<b>${esc(x.manager)}</b>`, pts2(x.points), `${wk(x)} · vs ${esc(x.opp)} (${pts2(x.opp_points)})`], me),
+    recordCard("Lowest score", "Regular season only.", G.low, x => [`<b>${esc(x.manager)}</b>`, pts2(x.points), `${wk(x)} · vs ${esc(x.opp)} (${pts2(x.opp_points)})`], me),
+    recordCard("Biggest blowout", "", G.blowouts, x => [`<b>${esc(x.manager)}</b> over ${esc(x.opp)}`, `+${pts2(x.margin)}`, `${wk(x)} · ${pts2(x.points)}–${pts2(x.opp_points)}`], me),
+    recordCard("Closest game", "", G.close, x => [`<b>${esc(x.manager)}</b> over ${esc(x.opp)}`, `+${pts2(x.margin)}`, `${wk(x)} · ${pts2(x.points)}–${pts2(x.opp_points)}`], me),
+  ])}
+  ${section("Seasons", [
+    recordCard("Most points in a season", "Regular season.", S.points, x => [`<b>${esc(x.manager)}</b>`, fmt(x.pf), `${x.season} · ${x.w}–${x.l} · ${x.ppg.toFixed(1)} per game`], me),
+    recordCard("Best regular-season record", "", S.record, x => [`<b>${esc(x.manager)}</b>`, `${x.w}–${x.l}${x.t ? "–" + x.t : ""}`, `${x.season} · ${fmt(x.pf)} points`], me),
+  ])}
+  ${section("Players", [
+    recordCard("Best single game", "Fantasy points by one player in a starting lineup.", P.games, x => [`${posBadge(x.pos)} <b>${esc(x.name)}</b>`, pts2(x.points), `${esc(x.manager)} · ${x.season} wk ${x.week}`], me),
+    recordCard("Franchise player", HELP.franchisePlayer, P.franchise, x => [`${posBadge(x.pos)} <b>${esc(x.name)}</b>`, fmt(x.points), `for ${esc(x.manager)} · ${x.starts} starts`], me),
+  ])}
+  ${section("Trades", [
+    recordCard("Biggest fleece (today)", HELP.today, T.now, tradeRow, me, tradeAssetsHTML),
+    recordCard("Biggest fleece (at the time)", HELP.atTime, T.then, tradeRow, me, tradeAssetsHTML),
+    recordCard("Biggest reversal", HELP.swing, T.flips, x => [`<b>${esc(x.winner)}</b> over ${esc(x.loser || "")}`, fmt(x.swing),
+      `${esc(x.date)} · ${esc(x.then_leader)} was ahead at the time; ${esc(x.winner)} leads by ${fmt(x.gap)} today`], me, tradeAssetsHTML),
+  ])}
+  ${section("Drafts", [
+    recordCard("Best rookie draft class", HELP.classChange, D.best_rookie, classRow, me),
+    recordCard("Worst rookie draft class", HELP.classChange, D.worst_rookie, classRow, me),
+    recordCard("Best startup draft", HELP.classChange, D.best_startup, classRow, me),
+    recordCard("Worst startup draft", HELP.classChange, D.worst_startup, classRow, me),
+    recordCard("Biggest draft steal", "Largest value gain since the pick was made.", D.steals, pickRow, me),
+    recordCard("Biggest draft bust", "Largest value loss since the pick was made.", D.busts, pickRow, me),
+  ])}
+  ${section("Pickups", [
+    recordCard("Best pickup (value)", HELP.captured, W.value, x => wvRow(x, fmt(x.captured)), me),
+    recordCard("Best pickup (points)", HELP.startPts, W.points, x => wvRow(x, `${x.start_points.toFixed(1)} pts`), me),
+    recordCard("Best free pickup", "Most start points from a player added for $0 or as a free agent.", W.free, x => wvRow(x, `${x.start_points.toFixed(1)} pts`), me),
+    recordCard("Biggest FAAB bid", "", W.bids, x => wvRow(x, `$${x.bid}`), me),
+  ])}`;
+}
+
 // ---------------------------------------------------------------- router
 const ROUTES = [
   [/^#?\/?$/, viewDashboard], [/^#\/partners$/, viewPartners], [/^#\/trade$/, viewTrade],
   [/^#\/team(?:\/(\d+))?$/, viewTeam], [/^#\/players$/, viewPlayers], [/^#\/history$/, viewHistory],
   [/^#\/drafts$/, viewDrafts], [/^#\/drafts\/(\d+)$/, viewDraftTeam],
   [/^#\/waivers$/, viewWaivers], [/^#\/waivers\/(\d+)$/, viewWaiverTeam],
-  [/^#\/rankings$/, viewRankings], [/^#\/pickups$/, viewPickups], [/^#\/breakouts$/, viewBreakouts],
+  [/^#\/rankings$/, viewRankings], [/^#\/records$/, viewRecords], [/^#\/pickups$/, viewPickups], [/^#\/breakouts$/, viewBreakouts],
   [/^#\/settings$/, viewSettings],
 ];
 async function route() {

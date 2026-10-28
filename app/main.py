@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, drafts, opportunity, pickups, rankings, retro, store, suggest, trade, waivers
+from . import config, drafts, opportunity, pickups, rankings, records, retro, store, suggest, trade, waivers
 from .config import ROOT
 from .league import League
 from .values import SOURCE_LABELS
@@ -225,6 +225,13 @@ def breakout_report():
 def trade_review():
     lg = league()
     out = _memo("retro", lg, lambda: _clean(retro.analyze(lg)))
+    return {**out, "me": lg.me["owner_id"] if lg.me else None}
+
+
+@app.get("/api/records")
+def record_book():
+    lg = league()
+    out = _memo("records", lg, lambda: _clean(records.analyze(lg)))
     return {**out, "me": lg.me["owner_id"] if lg.me else None}
 
 

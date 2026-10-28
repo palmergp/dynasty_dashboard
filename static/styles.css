@@ -196,3 +196,20 @@ table.heat th.num { text-align: center; }
 .badge.sig { cursor: help; margin: 1px 0; }
 td button { white-space: nowrap; }
 .me-card { border-color: var(--accent); }
+/* record book */
+h2.sec { margin: 18px 0 8px; }
+.record .k { font-size: 12px; color: var(--muted); }
+.record .v { font-size: 22px; font-weight: 650; white-space: nowrap; }
+.record .holder { font-size: 15px; }
+.record .mine, .tile.mine { color: var(--accent); }
+.tile.mine { border-color: var(--accent); }
+.runners { margin: 8px 0 0; padding-left: 20px; font-size: 12px; }
+.runners li { padding: 2px 0; }
+.runners li > span:first-child { display: inline; }
+.runners li > .num { float: right; font-weight: 600; }
+.rec-more { margin-top: 6px; font-size: 12px; }
+.rec-more summary { cursor: pointer; color: var(--accent); }
+.rec-trade { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 6px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; }
+.rec-trade table td { padding: 3px 4px; vertical-align: top; }
+.rec-trade .became { font-size: 11px; margin-top: 2px; }
+.rec-gaps { grid-column: 1 / -1; }

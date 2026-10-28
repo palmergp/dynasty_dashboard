@@ -92,6 +92,14 @@ def analyze(lg) -> dict:
         for dp in tx.get("draft_picks") or []:
             a = tendencies._hist_asset(lg, "pick", dp, ms)
             to, frm = dp["owner_id"], dp["previous_owner_id"]
+            orig = lg.teams.get(dp.get("roster_id"))
+            startup = a["kind"] == "player"
+            a["pick"] = {"label": f"{dp['season']} startup pick, round {dp['round']}" if startup else f"{dp['season']} Round {dp['round']} pick",
+                         "orig": None if startup or not orig else orig["manager"], "startup": startup}
+            if a.get("drafted") or a["kind"] == "player":
+                did = a.get("drafted") or a["id"]
+                info = lg.players_db.get(did) or {}
+                a["pick"].update(became=info.get("full_name") or did, became_pos=info.get("position") or "?")
             if a["kind"] == "player":  # startup pick: the player taken
                 vals, pid = player_vals(a["id"]), a["id"]
                 pts = held_points(to, pid, ms, start)
@@ -119,7 +127,7 @@ def analyze(lg) -> dict:
             sides.append({
                 "roster_id": rid, "user_id": uid,
                 "manager": names.get(uid, f"Team {rid}") if uid else f"Orphaned team {rid}",
-                "received": [{k: a[k] for k in ("kind", "id", "name", "pos")} | {
+                "received": [{k: a[k] for k in ("kind", "id", "name", "pos")} | {"pick": a.get("pick")} | {
                     "then": round(a["vals"][j0]), "now": round(a["vals"][-1]),
                     "peak": round(max(a["vals"][j0:])), "points": round(a["points"], 1)} for a in recv],
                 "faab": faab, "recv_series": [round(v) if v is not None else None for v in rs],

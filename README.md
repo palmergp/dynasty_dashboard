@@ -70,6 +70,7 @@ Run `git pull` (or download a fresh ZIP), then start the app again as usual. The
 | **Waivers** | Every waiver claim and free-agent add. Shows pickups per team, a line chart of the value of pickups on each roster over time, and a scorecard (pickups, FAAB spent, still rostered, hits, value at pickup, value captured, start points, best pickups). Also the league's top pickups by value captured and by start points. Season filter. |
 | **Waivers › team** | One team's pickup tiles and ranks, its pickup value vs. the league median, and every pickup with value at pickup, peak while held, value now, value captured, start points, a sparkline and the outcome. |
 | **Drafts › team** | One team's draft-class value vs. the league median, stat tiles, every pick with its draft-day value, current value, sparkline and status (on roster, traded, dropped), and its roster construction. |
+| **Record Book** | All-time records: champions, all-time standings (titles, finals, record, points), highest and lowest scores, biggest blowouts and closest games, best seasons, best single-game and "franchise player" performances, biggest trade fleeces (today, at the time, and reversals), best and worst draft classes, draft steals and busts, and best pickups. Your entries are highlighted. |
 | **Settings** | Source weights, stud premium, pick multipliers per round, and a data refresh. |
 
 ## Restarted leagues (linked history)
@@ -79,7 +80,7 @@ Some leagues restart in a new Sleeper league, for example to add teams, and Slee
 - Ignores old-league activity after the new league's first draft. The old league often keeps auto-scoring after a restart.
 - Treats the new league's startup-sized draft as a roster migration, not a real draft. Each player keeps his original acquisition (startup, rookie draft, trade, waivers).
 
-Trade tendencies, the Drafts, Waivers and Rankings pages, and roster construction all use the combined history. The Settings page shows the season chain that was built. Value history only starts in January 2025, so drafts before then are valued from that date, and the Drafts page says so.
+Trade tendencies, the Drafts, Waivers and Rankings pages, and roster construction all use the combined history. The Settings page shows the season chain that was built. Value history is fetched back to just before the league's first draft, so old drafts get real draft-day values.
 
 Each install has one league at a time. A friend should run their own copy (copy the folder without `data/`), because notes and overrides in `data/user.json` aren't kept per league.
 
@@ -114,7 +115,7 @@ Each install has one league at a time. A friend should run their own copy (copy 
 - Used picks are valued as the player who was drafted with them. Startup-draft picks are treated as players.
 
 **Drafts** (`app/history.py`, `app/drafts.py`)
-- Value history comes from DynastyProcess's GitHub repo. Its values file is committed weekly, so the git history is a free weekly archive back to January 2025.
+- Value history comes from DynastyProcess's GitHub repo. Its values file is committed weekly, so the git history is a free weekly archive going back years. The app fetches snapshots from just before the league's first draft.
 - Each snapshot is fetched once and cached. It's mapped onto the app's scale with the same DynastyProcess→consensus curve used for today's values.
 - Sleeper doesn't timestamp individual picks. Each pick's date is interpolated between the draft's first and last pick (the startup was a slow draft, June 15 – July 21, 2025), and the player is valued at the snapshot on or before that date.
 - Picks are credited to the team that made them.
@@ -171,7 +172,7 @@ Each install has one league at a time. A friend should run their own copy (copy 
 - Startup picks count as the player taken.
 - Rookie picks count at today's generic value for their round until used, then as the drafted player. There's no history of pick values, so "at the time" isn't truly historical for picks.
 - **Points** are what the acquired players scored in the receiving team's starting lineup while it held them.
-- Trades made before value history starts (January 2025) are marked "early" and use the first snapshot.
+- Trades made before the first fetched snapshot are marked "early" and use that snapshot.
 
 **Trades** (`app/trade.py`, `app/suggest.py`)
 - **Package value** = (Σ vᵖ)^(1/p), with p = 1.35 by default. This adds a stud premium, so two 3,000-value players don't equal one 6,000.
