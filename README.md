@@ -2,15 +2,56 @@
 
 A local web app for evaluating and finding trades in a Sleeper dynasty league. It pulls your league from the Sleeper API, blends dynasty values from three sources, works out each team's contention window and needs, profiles each manager's trade tendencies, and suggests trades tailored to every partner.
 
-## Run
+## Getting started
 
+### 1. Install Python
+You need **Python 3.10 or newer** (developed on 3.12) and an internet connection.
+- **Windows:** install from [python.org](https://www.python.org/downloads/). On the first installer screen, check **"Add python.exe to PATH"**. In a new terminal, `python --version` should print 3.10 or higher. If it opens the Microsoft Store instead, turn off the `python.exe` "App execution alias" in Windows Settings.
+- **macOS:** install from python.org or with `brew install python`. Check with `python3 --version`.
+- **Linux:** use your package manager. On Debian/Ubuntu you also need `python3-venv`.
+
+### 2. Get the code
+Either clone it with git:
+```
+git clone https://github.com/palmergp/dynasty_dashboard.git
+cd dynasty_dashboard
+```
+or download the ZIP from GitHub (**Code › Download ZIP**), unzip it, and open a terminal in that folder.
+
+### 3. Start the app
+**Windows (PowerShell):**
 ```powershell
 .\run.ps1
 ```
+If PowerShell says *running scripts is disabled on this system*, run it once like this instead:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\run.ps1
+```
+If you downloaded the ZIP, you can also run `Unblock-File .\run.ps1` once.
 
-This creates `.venv` on first run, starts the server at http://127.0.0.1:8000 and opens your browser. Run the tests with `.\.venv\Scripts\python -m pytest`.
+**macOS / Linux:**
+```bash
+chmod +x run.sh   # first time only
+./run.sh
+```
 
-The league ID, username and strategy are set in **Settings**, which is backed by `data/config.json`. Defaults: league `1327705946058686464`, user `gpalmer`, strategy `rebuild`.
+The first run creates a virtual environment in `.venv` and installs the requirements, which takes a minute or two. It then starts the server at http://127.0.0.1:8000 and opens your browser. Leave the terminal open while you use the app, and press Ctrl+C to stop it.
+
+### 4. Point it at your league
+The app starts on the author's league. Go to **Settings**, enter your league ID and Sleeper username, choose your strategy (rebuild / contend / auto) and click **Save**.
+- **League ID:** open your league at [sleeper.com](https://sleeper.com). The long number in the address bar (`sleeper.com/leagues/<league id>/...`) is the ID. 
+- **Restarted leagues:** if your league was restarted (for example, to add teams), also add the old league's ID under **Linked older league IDs**. See [Restarted leagues](#restarted-leagues-linked-history).
+
+The first load of a league takes a minute or more while it downloads rosters, every season's transactions, values, weekly stats, contracts and the value history. After that everything is cached and pages load quickly. **Refresh** in Settings re-downloads the live data.
+
+### Updating
+Run `git pull` (or download a fresh ZIP), then start the app again as usual. The run scripts install any new requirements. Your settings, notes and cache in `data/` are kept.
+
+### Troubleshooting
+- **Port 8000 is already in use:** stop the other server, or run `.venv\Scripts\python -m uvicorn app.main:app --port 8001` (macOS/Linux: `.venv/bin/python ...`) and open http://127.0.0.1:8001.
+- **A page shows an error after changing leagues:** check the league ID and username in Settings, then click Refresh.
+- **Starting over:** delete the `data/` folder to clear settings and cache.
+- **Tests:** `.venv\Scripts\python -m pytest` (macOS/Linux: `.venv/bin/python -m pytest`).
 
 ## Pages
 
