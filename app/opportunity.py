@@ -40,10 +40,13 @@ STARTERS = {"QB": 1, "RB": 1, "WR": 2, "TE": 1}
 FULL_SHARE = {"QB": 0.85, "RB": 0.55, "WR": 0.32, "TE": 0.60}
 OUT_STATUSES = {"IR", "Out", "PUP", "Doubtful", "Sus", "NFI"}
 LONG_OUT = {"IR", "PUP", "NFI"}  # multi-week absences; Out/Doubtful/Sus are usually shorter
-# Weights were checked against a 2025 -> 2026 backtest (see backtest()): efficiency and the
-# contract-year-backup signal predicted value gains best; "the starter ahead may leave" barely
-# did (teams often draft or sign a replacement), so it's kept as context at a low weight.
-WEIGHTS = {"rising": 0.15, "efficient": 0.30, "vacancy_now": 0.10, "vacancy_next": 0.10, "fa_move": 0.20, "youth": 0.15}
+# Weights were checked against backtests of the 2022-2025 seasons (see backtest_report()):
+# efficiency and the contract-year-backup signal predicted value gains in every season, youth
+# in most, a rising role in some. "The starter ahead may leave" did worse than average in
+# every season (teams usually bring in a replacement), so it's shown as context but scores 0.
+# "Opening now" can't be backtested (no injury history) and keeps a small weight.
+WEIGHTS = {"rising": 0.15, "efficient": 0.30, "vacancy_now": 0.10, "vacancy_next": 0.0, "fa_move": 0.20, "youth": 0.15}
+HEADROOM = 0.2  # penalty for an already-full role; larger penalties did worse in backtests
 SCALE = 0.55  # weighted sum that maps to a breakout score of 100
 
 CONTRACTS_URL = "https://github.com/nflverse/nflverse-data/releases/download/contracts/historical_contracts.parquet"
@@ -263,7 +266,7 @@ def _youth(age, draft_round, years_exp) -> float:
 
 def score(sig: dict, role_level: float, value: float, age: float | None, pos: str) -> int:
     raw = sum(WEIGHTS[k] * sig.get(k, 0.0) for k in WEIGHTS)
-    headroom = 1 - 0.4 * role_level           # a full-time starter has less room to grow
+    headroom = 1 - HEADROOM * role_level      # a full-time starter has less room to grow
     priced = 1 - 0.5 * _clamp((value - 4000) / 4000)  # stars are already priced as stars
     # A dynasty breakout needs years left to cash in: fade from age 25 to just past the cliff.
     aging = 1 - 0.6 * _clamp(((age or 25) - 25) / (SELL_AGE[pos] + 1 - 25))
@@ -384,6 +387,7 @@ def build(players: dict, use: dict, eff_use: dict, contracts_by_gsis: dict, seas
 
         out[pid] = {
             "breakout": score(sig, role_level, value, age, pos),
+            "role_level": round(role_level, 3), "age": age,
             "opp_score": round(100 * _clamp(0.5 * role_level + 0.5 * (u["snap_l3"] if u else 0.0))),
             "signals": {k: round(v, 2) for k, v in sig.items()},
             "notes": [{"key": k, "text": t} for k, t in notes],
@@ -438,9 +442,10 @@ def analyze(lg, force=False) -> dict:
             "weeks": len(cur) if role_use is u_cur else len(prev), "players": res}
 
 
-def backtest(lg, hist: dict, as_of: int | None = None) -> dict:
+def backtest(lg, hist: dict, as_of: int | None = None, horizon_days: int = 365) -> dict:
     """Run the model as it would have looked at the end of `as_of` (default: last season),
-    then compare each player's value then and now.
+    then compare each player's value then (mid-January) and `horizon_days` later (or the
+    latest snapshot, for the most recent season).
 
     Rosters come from that season's final stats; injuries aren't known historically, so
     the vacancy-now signal is off. Contracts are the ones in force as of that season
@@ -455,8 +460,10 @@ def backtest(lg, hist: dict, as_of: int | None = None) -> dict:
     then_day = (dt.date(as_of + 1, 1, 15)).isoformat()
     dates, hv = hist["dates"], hist["values"]
     j_then = max((i for i, d in enumerate(dates) if d <= then_day), default=None)
-    if j_then is None:
+    if j_then is None or dates[0] > then_day:
         return {}
+    later_day = (dt.date.fromisoformat(then_day) + dt.timedelta(days=horizon_days)).isoformat()
+    j_later = max(i for i, d in enumerate(dates) if d <= later_day)
 
     def at(pid, j):
         s = hv.get(pid)
@@ -477,12 +484,13 @@ def backtest(lg, hist: dict, as_of: int | None = None) -> dict:
     res = build(players, u, eff, cons, as_of, lambda pid: at(pid, j_then), ages.get)
     rows = []
     for pid, r in res.items():
-        then, now = at(pid, j_then), at(pid, len(dates) - 1)
+        then, now = at(pid, j_then), at(pid, j_later)
         rows.append({"id": pid, "name": players[pid]["name"], "pos": players[pid]["pos"], "team": players[pid]["team"],
                      "breakout": r["breakout"], "signals": r["signals"], "notes": r["notes"],
+                     "role_level": r["role_level"], "age": r["age"],
                      "depth": r["depth"]["label"], "contract_end": (r["contract"] or {}).get("end"), "then": round(then), "now": round(now),
                      "change": round(now - then), "now_team": (db.get(pid) or {}).get("team")})
-    return {"as_of": as_of, "then_date": dates[j_then], "now_date": dates[-1], "rows": rows}
+    return {"as_of": as_of, "then_date": dates[j_then], "now_date": dates[j_later], "rows": rows}
 
 
 def backtest_summary(bt: dict, top: int = 20, hit: int = 500, cap: int = 4000) -> dict:
@@ -516,6 +524,31 @@ def backtest_summary(bt: dict, top: int = 20, hit: int = 500, cap: int = 4000) -
         "risers": sorted(cand, key=lambda r: -r["change"])[:12],
         "spotlight": next((r for r in cand if r["name"] == "Isaiah Likely"), None),
     }
+
+
+def backtest_report(lg, seasons: int = 4) -> dict:
+    """Backtests for each of the last `seasons` seasons, pooled. Each season is judged over
+    the year after it (the latest one up to now)."""
+    from . import history
+    first = lg.season - seasons
+    hist = history.value_history(lg, dt.date(first, 12, 1))
+    by_season = []
+    for s in range(first, lg.season):
+        summ = backtest_summary(backtest(lg, hist, s))
+        if summ:
+            by_season.append(summ)
+    if not by_season:
+        return {}
+    latest = by_season[-1]
+    mean = lambda k: round(statistics.mean(x[k] for x in by_season), 3)
+    pooled = {"seasons": [x["as_of"] for x in by_season], "n": sum(x["n"] for x in by_season),
+              "top": latest["top"], "hit": latest["hit"], "cap": latest["cap"],
+              "top_hit_rate": mean("top_hit_rate"), "base_hit_rate": mean("base_hit_rate"),
+              "top_excess": round(statistics.mean(x["top_excess"] for x in by_season))}
+    spot = next((x["spotlight"] | {"as_of": x["as_of"], "n": x["n"]} for x in reversed(by_season) if x.get("spotlight")), None)
+    slim = [{k: x[k] for k in ("as_of", "then_date", "now_date", "n", "top_hits", "top_hit_rate", "base_hit_rate", "top_excess")}
+            for x in by_season]
+    return {"pooled": pooled, "by_season": slim, "latest": latest, "spotlight": spot}
 
 
 def shakeups(lg) -> list[dict]:

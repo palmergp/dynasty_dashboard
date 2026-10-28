@@ -147,20 +147,22 @@ Each install has one league at a time. A friend should run their own copy (copy 
   - productive starter on an expiring deal: 25% (usually extended or tagged)
   - restricted free agent, or a 1st-round rookie with a 5th-year option: 20–25%
   - an aging player the team can cut and save 60%+ of his cap hit: 30–45%
-- **Breakout score** (0–100) combines six signals, each from 0 to 1:
+- **Breakout score** (0–100) combines these signals, each from 0 to 1:
   - efficient (30%): points per opportunity vs. the position median
   - contract-year backup (20%): his deal ends while he's behind a starter
   - rising role (15%): last 3 games vs. earlier
   - youth and draft capital (15%)
-  - opening now (10%): a player ahead of him is out
-  - path opening (10%): a player ahead of him may leave
-- The score is discounted for players who already have a full role, who are already valued at 4,000+, or who are past age 25.
-- **Backtest:** the weights were checked by running the model as of the end of 2025 and comparing values then with values now.
-  - The top 20 scores gained 500+ value 20% of the time, vs. 3.4% for everyone under 4,000.
-  - On average they beat similar-value players by about 126.
-  - Efficiency and contract-year backups predicted best. "The starter ahead may leave" barely did, because teams often draft or sign a replacement, so it has a low weight.
-  - Isaiah Likely ranked #65 of 561 with the contract-year-backup flag.
-  - One season is a small sample.
+  - opening now (10%): a player ahead of him is out, and he isn't out longer himself
+  - path opening (shown, but 0% of the score): a player ahead of him may leave
+- The score is discounted a little for players who already have a full role, more for those already valued at 4,000+, and for players past age 25.
+- **Backtest:** the weights were checked by running the model as of the end of each season from 2022 to 2025 (that season's usage, the contracts in force then and the values then) and comparing values a year later. The Breakouts page shows it live.
+  - Pooled over the four seasons, the top 20 scores gained 500+ value 22.5% of the time, vs. 4.0% for everyone under 4,000. They beat similar-value players by about 386 on average.
+  - Every season beat the base rate by 4× or more: 20%, 35%, 15% and 20% vs. 3–5%.
+  - Efficiency and contract-year backups predicted gains in all four seasons, and youth in three.
+  - "The starter ahead may leave" did worse than average in all four, because teams usually bring in a replacement, so it no longer counts toward the score.
+  - Weights were chosen so they also held up on seasons they weren't tuned on.
+  - "Opening now" can't be backtested, because there's no injury history.
+  - Isaiah Likely ranked in the top ~11% at the end of 2025.
 - **Pickup score** = his value to your team (dynasty value adjusted for your window and needs, as in trades) + a breakout allowance of up to 750.
   - The suggested drop is your active player with the lowest pickup score. Open roster or taxi spots are used first.
   - The suggested bid is the median winning bid on the 8 most similar-value claims in this league over the last two seasons.

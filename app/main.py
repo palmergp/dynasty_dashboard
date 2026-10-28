@@ -212,13 +212,18 @@ def breakout_report():
             rows.append({**a, "owner_rid": t["roster_id"] if t else None, "owner": t["manager"] if t else None,
                          "owner_window": t["window"] if t else None})
         rows.sort(key=lambda r: -r["breakout"])
-        _, hist, _ = drafts.context(lg)
         return _clean({
             "season": lg.season, "role_season": lg.opportunity["role_season"], "weeks": lg.opportunity["weeks"],
             "players": rows[:400], "shakeups": opportunity.shakeups(lg),
-            "backtest": opportunity.backtest_summary(opportunity.backtest(lg, hist)),
         })
     return {**_memo("breakouts", lg, build), "me": lg.me["roster_id"] if lg.me else None, "error": lg.opportunity_error}
+
+
+@app.get("/api/backtest")
+def backtest_report():
+    """Separate from /api/breakouts: the first run downloads several seasons of history."""
+    lg = league()
+    return _memo("backtest", lg, lambda: _clean(opportunity.backtest_report(lg)))
 
 
 @app.get("/api/trade-review")

@@ -36,7 +36,7 @@ async function teamData(rid, force) {
 }
 function invalidate() {
   state.ov = null; state.teamCache = {}; state.draftsData = null; state.waiversData = null; state.rankingsData = null;
-  state.pickupsData = null; state.breakoutsData = null; state.reviewData = null; state.recordsData = null;
+  state.pickupsData = null; state.breakoutsData = null; state.reviewData = null; state.recordsData = null; state.backtestData = null;
 }
 
 // ---------------------------------------------------------------- help tooltips
@@ -1261,11 +1261,11 @@ function drawRankings(R) {
 const SIGNAL_LABEL = { rising: "Rising role", efficient: "Efficient", vacancy_now: "Opening now", vacancy_next: "Path opening", fa_move: "Contract-year backup", injured: "Injured stash" };
 const SIGNAL_HELP = {
   rising: "His share of snaps, or of his team's opportunities at his position, is up over the last 3 games.",
-  efficient: "Scores more fantasy points per opportunity (carries + 1.5× targets; dropbacks for QBs) than the median regular at his position, so a bigger role should pay off. The strongest single signal in the 2025 backtest.",
+  efficient: "Scores more fantasy points per opportunity (carries + 1.5× targets; dropbacks for QBs) than the median regular at his position, so a bigger role should pay off. The strongest signal in backtests: it predicted value gains in every season tested.",
   vacancy_now: "A player ahead of him on the depth chart is out right now. Full credit when that player is on IR or PUP, half for a likely short absence (Out, Doubtful, suspended). No credit if he's on IR himself, since the starter will probably be back first.",
   injured: "He's on IR or PUP himself. Any breakout case is about next season, not now. Injuries ahead of him don't count toward his score.",
-  vacancy_next: "A player ahead of him may not be back next season: contract ending, or the team can cut him cheaply. Weak on its own in the backtest, because teams often draft or sign a replacement.",
-  fa_move: "His contract ends this season while he's stuck behind a starter, so he may sign somewhere with a bigger role. This is the Isaiah Likely path, and the second-strongest signal in the backtest.",
+  vacancy_next: "A player ahead of him may not be back next season: contract ending, or the team can cut him cheaply. Shown for context only, and not counted in the score: in backtests these players did worse than average every season, because teams usually bring in a replacement.",
+  fa_move: "His contract ends this season while he's stuck behind a starter, so he may sign somewhere with a bigger role. This is the Isaiah Likely path. It predicted value gains in every season tested.",
 };
 Object.assign(HELP, {
   breakout: "0–100. How strongly usage, depth-chart and contract signals point to a bigger role ahead. It's discounted for players who already have a full role, who are already valued as stars, or who are past age 25. Hover a player's signal tags for the specifics.",
@@ -1279,7 +1279,7 @@ Object.assign(HELP, {
   bid: "Suggested FAAB bid: the median winning bid on the 8 most similar-value claims in this league over the last two seasons, with the middle half of those bids as the range.",
   gain: "Pickup score of the player minus the pickup score of the player you'd drop.",
   drops: "Your lowest pickup scores among active (non-taxi, non-IR) players: the cheapest roster spots to open.",
-  backtest: "The model run as it would have looked at the end of last season: last season's usage, contracts in force then and values then, compared with values now. Players already worth 4,000+ are excluded. A hit gained 500+ value.",
+  backtest: "The model run as it would have looked at the end of each past season (that season's usage, contracts in force then and values then), compared with values a year later. Players already worth 4,000+ are excluded. A hit gained 500+ value.",
   shakeup: "Starters who may not be on their team next season (contract ending, or cheap to cut) or who are out now, and the next players in line behind them.",
 });
 const pctCell = v => (v == null ? "–" : `${Math.round(v * 100)}%`);
@@ -1416,23 +1416,13 @@ async function viewBreakouts() {
   const season = ov.league.season, me = B.me, bo = state.bo;
   const rows = B.players.filter(r => (bo.avail === "all" || availOf(r, me) === bo.avail) && (!bo.pos || r.pos === bo.pos));
   const faMovers = rows.filter(r => (r.opp?.signals?.fa_move || 0) > 0).slice(0, 25);
-  const bt = B.backtest || {};
-  setTimeout(() => drawBreakouts(B, rows), 0);
-  const btRow = r => `<tr><td class="num">${r.rank}</td><td>${posBadge(r.pos)}</td><td><b>${esc(r.name)}</b><div class="muted small">${esc(r.team)}${r.now_team && r.now_team !== r.team ? ` → ${esc(r.now_team)}` : ""}</div></td>
-    <td class="num">${r.breakout}</td><td class="num">${fmt(r.then)}</td><td class="num">${fmt(r.now)}</td><td class="num ${signCls(r.change)}">${r.change > 0 ? "+" : ""}${fmt(r.change)}</td>
-    <td>${(r.notes || []).map(n => `<span class="badge tag" ${tipAttr(n.text + ".")}>${SIGNAL_LABEL[n.key]}</span>`).join(" ")}</td></tr>`;
-  const btHead = `<thead><tr><th class="num">Rank</th><th></th><th>Player</th><th class="num">Score then</th><th class="num">Value then</th><th class="num">Now</th><th class="num">Change</th><th>Signals then</th></tr></thead>`;
+  setTimeout(() => { drawBreakouts(B, rows); loadBacktest(); }, 0);
   const nextTxt = n => `<b>${esc(n.name)}</b> <span class="small muted">${esc(n.depth || "")}${n.age ? ` · ${n.age}y` : ""} · ${fmt(n.value)} · breakout ${n.breakout} · ${n.owner_rid == null ? "free agent" : n.owner_rid === me ? "<b>yours</b>" : esc(n.owner)}</span>`;
   return `${B.error ? `<div class="warnbox">Usage/contract data failed to load (${esc(B.error)}).</div>` : ""}
   <div class="card"><h1>Breakout watch</h1>
     <p class="muted">Players whose role is likely to grow before the market prices it in: ${Object.keys(SIGNAL_LABEL).filter(k => k !== "injured").map(k => `<span class="badge tag" ${tipAttr(SIGNAL_HELP[k])}>${SIGNAL_LABEL[k]}</span>`).join(" ")}.
       Free agents are pickup targets; players on other teams are buy-low ${hint("trade targets", "In trade suggestions, rebuilding teams value breakout upside up to 15% more, and suggestions flag players to buy before a breakout.")}. Based on ${usageNote(B)} and OverTheCap contracts.</p>
-    ${bt.n ? `<div class="tiles">
-      <div class="tile"><div class="k">${hint(`Backtest: top ${bt.top} hit rate`, HELP.backtest)}</div><div class="v">${Math.round(bt.top_hit_rate * 100)}%</div><div class="d muted">gained ${fmt(bt.hit)}+ value · vs ${(bt.base_hit_rate * 100).toFixed(1)}% of all ${bt.n} players</div></div>
-      <div class="tile"><div class="k">${hint("Backtest: value vs. similar players", HELP.backtest)}</div><div class="v">${bt.top_excess > 0 ? "+" : ""}${fmt(bt.top_excess)}</div><div class="d muted">average, top ${bt.top}, ${bt.then_date} → ${bt.now_date}</div></div>
-      ${bt.spotlight ? `<div class="tile"><div class="k">Isaiah Likely, end of ${bt.as_of}</div><div class="v">#${bt.spotlight.rank}</div>
-        <div class="d muted">of ${bt.n} · score ${bt.spotlight.breakout}${bt.spotlight.notes.length ? ` · ${bt.spotlight.notes.map(n => SIGNAL_LABEL[n.key]).join(", ").toLowerCase()}` : ""} · ${fmt(bt.spotlight.then)} → ${fmt(bt.spotlight.now)}</div></div>` : ""}
-    </div>` : ""}</div>
+    <div id="bo-bt-tiles"><p class="muted small">Running the backtest… The first time, this downloads several seasons of history and can take a minute.</p></div></div>
   <div class="filters">${boSeg("Show", "avail", [["all", "Everyone"], ["fa", "Free agents"], ["other", "Trade targets"], ["mine", "My roster"]])}
     ${boSeg("Position", "pos", [["", "All"], ["QB", "QB"], ["RB", "RB"], ["WR", "WR"], ["TE", "TE"]])}</div>
   <div class="card"><h2>Breakout score vs. dynasty value</h2>
@@ -1467,13 +1457,41 @@ async function viewBreakouts() {
     </table></div>
     <p class="muted small">Leave risk is a rough rule of thumb, not a forecast: about 55% for an expiring deal, 70% if he's also past the age cliff, 25% for a productive starter (usually extended or tagged), and 30–45% for an aging player the team can cut cheaply.</p>
   </div>
-  ${bt.n ? `<div class="card"><h2>${hint("Model check: how last season's flags did", HELP.backtest)}</h2>
-    <p class="muted small">The model as it would have looked at the end of ${bt.as_of} (${bt.then_date}), compared with values on ${bt.now_date}. One season is a small sample, so treat this as a sanity check, not proof.
-      Injuries aren't known historically, so the "opening now" signal is off here.</p>
-    <div class="grid g2">
-      <div><h3>Top ${bt.top} breakout scores then</h3><div class="scroll"><table>${btHead}<tbody>${bt.picks.map(btRow).join("")}</tbody></table></div></div>
-      <div><h3>Biggest risers since, and where the model ranked them</h3><div class="scroll"><table>${btHead}<tbody>${bt.risers.map(btRow).join("")}</tbody></table></div></div>
-    </div></div>` : ""}`;
+  <div id="bo-bt-card"></div>`;
+}
+async function loadBacktest() {
+  const tiles = $("#bo-bt-tiles");
+  if (!tiles) return;
+  let R;
+  try { R = state.backtestData || (state.backtestData = await api("/api/backtest")); }
+  catch (e) { tiles.innerHTML = `<p class="small delta-neg">Backtest unavailable: ${esc(e.message)}</p>`; return; }
+  if (!$("#bo-bt-tiles")) return;
+  if (!R.pooled) { tiles.innerHTML = ""; return; }
+  const P = R.pooled, L = R.latest, S = R.spotlight;
+  const yrs = P.seasons.length > 1 ? `${P.seasons[0]}–${P.seasons[P.seasons.length - 1]}` : String(P.seasons[0]);
+  tiles.innerHTML = `<div class="tiles">
+    <div class="tile"><div class="k">${hint(`Backtest: top ${P.top} hit rate`, HELP.backtest)}</div><div class="v">${Math.round(P.top_hit_rate * 100)}%</div>
+      <div class="d muted">gained ${fmt(P.hit)}+ value within a year · vs ${(P.base_hit_rate * 100).toFixed(1)}% of all players · ${yrs} seasons</div></div>
+    <div class="tile"><div class="k">${hint("Backtest: value vs. similar players", HELP.backtest)}</div><div class="v">${P.top_excess > 0 ? "+" : ""}${fmt(P.top_excess)}</div>
+      <div class="d muted">average for the top ${P.top} each season, over the next year</div></div>
+    ${S ? `<div class="tile"><div class="k">Isaiah Likely, end of ${S.as_of}</div><div class="v">#${S.rank}</div>
+      <div class="d muted">of ${S.n} · score ${S.breakout}${S.notes.length ? ` · ${S.notes.map(n => SIGNAL_LABEL[n.key]).join(", ").toLowerCase()}` : ""} · ${fmt(S.then)} → ${fmt(S.now)}</div></div>` : ""}
+  </div>`;
+  const btRow = r => `<tr><td class="num">${r.rank}</td><td>${posBadge(r.pos)}</td><td><b>${esc(r.name)}</b><div class="muted small">${esc(r.team)}${r.now_team && r.now_team !== r.team ? ` → ${esc(r.now_team)}` : ""}</div></td>
+    <td class="num">${r.breakout}</td><td class="num">${fmt(r.then)}</td><td class="num">${fmt(r.now)}</td><td class="num ${signCls(r.change)}">${r.change > 0 ? "+" : ""}${fmt(r.change)}</td>
+    <td>${(r.notes || []).map(n => `<span class="badge tag" ${tipAttr(n.text + ".")}>${SIGNAL_LABEL[n.key]}</span>`).join(" ")}</td></tr>`;
+  const btHead = `<thead><tr><th class="num">Rank</th><th></th><th>Player</th><th class="num">Score then</th><th class="num">Value then</th><th class="num">Later</th><th class="num">Change</th><th>Signals then</th></tr></thead>`;
+  $("#bo-bt-card").innerHTML = `<div class="card"><h2>${hint("Model check: how past flags did", HELP.backtest)}</h2>
+    <p class="muted small">The model as it would have looked at the end of each season, compared with values about a year later (the latest season: up to now).
+      Injuries aren't known historically, so the "opening now" signal is off in backtests.</p>
+    <div class="scroll"><table><thead><tr><th>Season</th><th>Judged</th><th class="num">Players</th><th class="num">Top ${P.top} hits</th><th class="num">Hit rate</th><th class="num">Base rate</th><th class="num">Vs. similar players</th></tr></thead>
+      <tbody>${R.by_season.map(x => `<tr><td>${x.as_of}</td><td class="small">${esc(x.then_date)} → ${esc(x.now_date)}</td><td class="num">${x.n}</td><td class="num">${x.top_hits}</td>
+        <td class="num"><b>${Math.round(x.top_hit_rate * 100)}%</b></td><td class="num">${(x.base_hit_rate * 100).toFixed(1)}%</td><td class="num">${signed(x.top_excess)}</td></tr>`).join("")}</tbody></table></div>
+    <div class="grid g2" style="margin-top:10px">
+      <div><h3>Top ${L.top} breakout scores, end of ${L.as_of}</h3><div class="scroll"><table>${btHead}<tbody>${L.picks.map(btRow).join("")}</tbody></table></div></div>
+      <div><h3>Biggest risers since ${L.as_of}, and where the model ranked them</h3><div class="scroll"><table>${btHead}<tbody>${L.risers.map(btRow).join("")}</tbody></table></div></div>
+    </div></div>`;
+  makeSortable($("#bo-bt-card"));
 }
 function drawBreakouts(B, rows) {
   const host = $("#bo-map");
