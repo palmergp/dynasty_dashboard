@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, draftprep, drafts, opportunity, pickups, rankings, records, retro, season, store, suggest, trade, waivers
+from . import config, draftprep, drafts, feed, opportunity, pickups, rankings, records, retro, season, store, suggest, trade, waivers
 from .config import ROOT
 from .league import League
 from .values import SOURCE_LABELS
@@ -36,6 +36,24 @@ def _remember_name(lg):
     prof = cfg["profiles"].get(lid, {})
     if prof.get("name") != lg.info.get("name") or not all(k in prof for k in config.PROFILE_KEYS):
         config.save({"profiles": {**cfg["profiles"], lid: {**prof, "name": lg.info.get("name")}}})
+
+
+def _auto_refresh():
+    """Rebuild every few minutes. Cached data is only re-downloaded once its normal time-to-live
+    has passed (live Sleeper data: 15 minutes), so this is cheap."""
+    while True:
+        minutes = config.load().get("auto_refresh_minutes") or 0
+        time.sleep(max(minutes, 1) * 60)
+        if minutes and _state["league"] is not None:
+            try:
+                _rebuild()
+            except Exception as e:  # keep serving the last good build
+                print(f"auto-refresh failed: {e}")
+
+
+@app.on_event("startup")
+def _start_refresher():
+    threading.Thread(target=_auto_refresh, daemon=True).start()
 
 
 def _rebuild():
@@ -250,6 +268,23 @@ def season_report():
 def draft_prep():
     lg = league()
     return _memo("draftprep", lg, lambda: _clean(draftprep.analyze(lg, _season(lg))))
+
+
+@app.get("/api/status")
+def status():
+    return {"built": _state["built"], "auto_refresh_minutes": config.load().get("auto_refresh_minutes")}
+
+
+@app.get("/api/feed")
+def feed_report():
+    lg = league()
+    return _clean(feed.changes(lg))
+
+
+@app.post("/api/feed/seen")
+def feed_seen():
+    feed.mark_seen(league())
+    return {"ok": True}
 
 
 @app.get("/api/trade-review")

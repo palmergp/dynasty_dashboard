@@ -23,6 +23,8 @@ DEFAULTS = {
     "consolidation_exponent": 1.35,
     # Minimum market value for an asset to be offered/requested in generated trades.
     "suggestion_min_value": 800,
+    # Rebuild the league in the background this often so live data stays fresh (0 = off).
+    "auto_refresh_minutes": 15,
     # Per-league settings, remembered so switching back to a league restores them:
     # league_id -> {"name", "username", "my_strategy", "linked_league_ids"}.
     "profiles": {},

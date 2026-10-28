@@ -327,10 +327,10 @@ def player_notes(a: dict, lg: "League") -> list[str]:
     o = a.get("opp")
     if o:
         c = o.get("contract") or {}
-        if c.get("end") is not None and c["end"] <= lg.season:
-            notes.append(f"Contract ends after {lg.season}: {c.get('leave_why') or 'free agent next year'}.")
-        elif c.get("leave_why"):
+        if c.get("leave_why"):
             notes.append(c["leave_why"] + ".")
+        elif c.get("end") is not None and c["end"] <= lg.season:
+            notes.append(f"Contract ends after {lg.season}.")
         for n in o["notes"]:
             notes.append(n["text"] + ".")
         if o["breakout"] >= 40:

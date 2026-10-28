@@ -196,6 +196,11 @@ table.heat th.num { text-align: center; }
 .badge.sig { cursor: help; margin: 1px 0; }
 td button { white-space: nowrap; }
 .me-card { border-color: var(--accent); }
+/* what-changed feed */
+ul.feed { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+ul.feed li { padding: 3px 0; border-bottom: 1px solid var(--border); }
+ul.feed li.mine { color: var(--accent); }
+#updated .chip { padding: 1px 8px; font-size: 12px; }
 /* record book */
 h2.sec { margin: 18px 0 8px; }
 .record .k { font-size: 12px; color: var(--muted); }

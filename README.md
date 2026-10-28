@@ -44,6 +44,9 @@ The app starts on the author's league. Go to **Settings**, enter your league ID 
 
 The first load of a league takes a minute or more while it downloads rosters, every season's transactions, values, weekly stats, contracts and the value history. After that everything is cached and pages load quickly. **Refresh** in Settings re-downloads the live data.
 
+### Staying up to date
+While the app is running, it rebuilds in the background every 15 minutes (`auto_refresh_minutes` in `data/config.json`; 0 turns it off). Live Sleeper data is re-downloaded once it's 15 minutes old, values every 12 hours. The header shows when the data was last updated. When newer data arrives, a **New data · refresh** button appears, so the page you're on never reloads under you.
+
 ### Updating
 Run `git pull` (or download a fresh ZIP), then start the app again as usual. The run scripts install any new requirements. Your settings, notes and cache in `data/` are kept.
 
@@ -57,7 +60,7 @@ Run `git pull` (or download a fresh ZIP), then start the app again as usual. The
 
 | Page | What it's for |
 |---|---|
-| **Dashboard** | Your window, ranks, sell candidates and positional outlook. Also a league table of every team's window, strength, picks, needs and tendency tags. |
+| **Dashboard** | "Since your last visit": value moves and injury changes on your roster, trades and notable adds, newly available players and new breakout flags, with a *Mark all as seen* button. Also your window, ranks, sell candidates and positional outlook. Also a league table of every team's window, strength, picks, needs and tendency tags. |
 | **Rankings** | Franchise score rankings (players + picks vs. league average), and a league map (win-now strength vs. franchise value, in four quadrants). Also franchise composition (top-10 players / depth / picks), roster value over time, a positional strength heatmap (now and long-term), and age structure. |
 | **Playoff Odds** | Playoff, bye, title and last-place odds for every team, from simulating the rest of the season with weekly projections. Also projected wins, strength of schedule ahead and so far, your remaining games with win chances, and each team's projected rookie-draft slot. |
 | **Draft Prep** | The next rookie draft: your picks with projected slots and values, pick capital by team, a heatmap of where every first-round pick will likely land, and how each manager drafts (position leanings, how often they take the best available). Once the rookie class has values after the NFL draft, it adds a big board and mock drafts of who's likely available at each of your picks. |

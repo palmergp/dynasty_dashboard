@@ -181,9 +181,10 @@ async function viewDashboard() {
   const rank = (key) => me ? [...ov.teams].sort((a, b) => b[key] - a[key]).findIndex(t => t.is_me) + 1 : "–";
   const sells = meT ? meT.players.filter(p => meT.sell_candidates.includes(p.id)) : [];
   const errs = Object.entries(ov.source_errors || {});
-  if (me) setTimeout(() => dashOpportunity(me.roster_id), 0);
+  if (me) setTimeout(() => { dashFeed(); dashOpportunity(me.roster_id); }, 0);
   return `
     ${errs.length ? `<div class="warnbox">Some value sources failed and were skipped: ${errs.map(([k, v]) => `${k} (${esc(v)})`).join("; ")}</div>` : ""}
+    ${me ? `<div class="card" id="dash-feed"><h2>Since your last visit</h2><p class="muted">Checking for changes…</p></div>` : ""}
     ${me ? `<div class="card">
       <div class="row spread">
         <div><h1>${esc(me.manager)} ${windowBadge(me.window, me.window_source)}</h1>
@@ -235,6 +236,51 @@ async function viewDashboard() {
       <p class="muted small">Contend score blends starting-lineup strength (win-now values), record and points scored, plus trade behavior. Values are on a 0–10,000 blended scale.</p>
     </div>`;
 }
+
+const FEED_GROUPS = [["injury", "Injuries on your roster"], ["value", "Value moves on your roster"], ["trade", "Trades"],
+  ["available", "Newly available"], ["breakout", "New breakout flags"], ["move", "Notable adds elsewhere"]];
+async function dashFeed() {
+  const host = $("#dash-feed");
+  let F;
+  try { F = await api("/api/feed"); } catch (e) { if (host) host.innerHTML = `<h2>Since your last visit</h2><div class="warnbox">${esc(e.message)}</div>`; return; }
+  if (!$("#dash-feed")) return;
+  const head = `<div class="row spread"><h2>Since your last visit${F.since ? ` <span class="muted small">(${esc(F.since.replace("T", " "))})</span>` : ""}</h2>
+    ${!F.baseline ? `<button id="feed-seen">Mark all as seen</button>` : ""}</div>`;
+  let body;
+  if (F.baseline) body = `<p class="muted">Saved a starting point. From now on, changes show up here: value moves and injuries on your roster, trades, newly available players and new breakout flags.</p>`;
+  else if (!F.items.length) body = `<p class="muted">Nothing notable has changed.</p>`;
+  else body = `<div class="grid g3">${FEED_GROUPS.map(([k, label]) => {
+      const xs = F.items.filter(x => x.kind === k);
+      if (!xs.length) return "";
+      return `<div><h3>${label} <span class="muted small">${xs.length}</span></h3><ul class="feed">${xs.slice(0, 8).map(x => `<li class="${x.mine ? "mine" : ""}">
+        ${x.pos ? posBadge(x.pos) + " " : ""}${x.name ? `<b>${esc(x.name)}</b> ` : ""}<span class="${x.delta > 0 ? "delta-pos" : x.delta < 0 ? "delta-neg" : "muted"}">${x.date ? esc(x.date) + " · " : ""}${esc(x.text)}</span></li>`).join("")}
+        ${xs.length > 8 ? `<li class="muted">+${xs.length - 8} more</li>` : ""}</ul></div>`;
+    }).join("")}</div>`;
+  host.innerHTML = head + body;
+  const btn = $("#feed-seen");
+  if (btn) btn.onclick = async () => { btn.disabled = true; await api("/api/feed/seen", { method: "POST" }); dashFeed(); toast("Marked as seen"); };
+}
+
+// Header: when the data was last rebuilt, and a prompt when the server has newer data.
+(function watchUpdates() {
+  let seen = null;
+  const ago = s => { const m = Math.round((Date.now() / 1000 - s) / 60); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
+  async function tick() {
+    try {
+      const s = await api("/api/status");
+      const el = $("#updated");
+      if (!el || !s.built) return;
+      if (seen === null) seen = s.built;
+      el.innerHTML = s.built > seen
+        ? `· <button class="chip on" id="new-data">New data · refresh</button>`
+        : `· updated ${ago(s.built)}`;
+      const b = $("#new-data");
+      if (b) b.onclick = () => { seen = s.built; invalidate(); route(); tick(); };
+    } catch {}
+  }
+  tick();
+  setInterval(tick, 60000);
+})();
 
 async function dashOpportunity(me) {
   const host = $("#dash-opp");
