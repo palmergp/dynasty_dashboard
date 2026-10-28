@@ -134,7 +134,7 @@ const HELP = {
 const windowBadge = (w, src) => `<span class="badge w-${w}" ${tipAttr(WINDOW_HELP[w] + (src === "you" ? " ✎ = set by you, not auto-detected." : " Auto-detected; change it on the team's page."))}>${WINDOW_LABEL[w] || w}${src === "you" ? " ✎" : ""}</span>`;
 const posBadge = p => `<span class="pos pos-${esc(p)}">${esc(p)}</span>`;
 const tags = ts => (ts || []).map(t => `<span class="badge tag" ${tipAttr(tagHelp(t))}>${esc(t)}</span>`).join("");
-const accBadge = s => `<span class="badge acc-${s.acceptance_label}" ${tipAttr(`Model estimate of how likely they are to accept, 0–100: their team-context gain (with their trade tendencies) blended 50/50 with market value. 65+ Likely, 40–64 Possible, under 40 Unlikely.`)}>${s.acceptance_label} (${s.acceptance})</span>`;
+const accBadge = s => `<span class="badge acc-${s.acceptance_label}" ${tipAttr(`Model estimate of how likely they are to accept, 0–100: their team-context gain (with their trade tendencies) blended 50/50 with market value. 60+ Likely, 35–59 Possible, under 35 Unlikely. Calibrated on real completed trades: a fair deal is about a coin flip.`)}>${s.acceptance_label} (${s.acceptance})</span>`;
 
 function assetMeta(a) {
   if (a.kind === "pick") return a.tier ? `${a.tier} projected` : "";

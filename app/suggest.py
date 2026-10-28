@@ -68,7 +68,7 @@ def for_partner(lg, partner_rid: int, limit: int = 4) -> list[dict]:
             cut_them = their_cut(give_np, {r[0]["id"] for r in get})
             acc, _ = acceptance(perceived_gain(give_them, get_them, mkt_give, mkt_get, cut_them),
                                 tend, len(give), len(get))
-            if acc < 30:
+            if acc < 45:  # keep suggestions near fair for them; the calibrated curve is gentle
                 continue
             # Expected value gained (points of my context value), not % — so trivial
             # depth swaps don't outrank deals that move the needle.

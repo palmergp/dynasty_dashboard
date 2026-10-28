@@ -206,9 +206,12 @@ One install can hold several leagues. Each league you've opened is saved under *
   - Rebuilders weight picks more and discount players nearing their position's age cliff (QB 32, RB 26, WR 28, TE 29).
   - Positional needs adjust the value up or down.
 - **Acceptance** blends the other manager's tendency-adjusted context view 50/50 with the market. Real managers check trade calculators.
+  - **Calibration:** in about 190 completed trades across two leagues, the side that gave up more value lost a median 26%. That holds even after team context, because managers' and calculators' valuations differ a lot. So the acceptance curve is gentle: a fair deal scores about 48 (a coin flip), +10% for them about 60, and a deal like that median real one about 20.
+  - Labels: Likely 60+, Possible 35–59, Unlikely under 35.
+  - Rejected offers aren't visible in Sleeper, so this checks plausibility, not the exact odds.
   - The threshold rises for managers who usually come out ahead.
   - Their consolidation habits are factored in.
-- **Suggestions** search 1–2-for-1–3 packages for arbitrage: assets worth more to them than to you, in exchange for assets worth more to you. They are ranked by your expected gain × acceptance likelihood, and count roster cuts.
+- **Suggestions** search 1–2-for-1–3 packages for arbitrage: assets worth more to them than to you, in exchange for assets worth more to you. They are ranked by your expected gain × acceptance likelihood, and count roster cuts. Only deals they'd score 45+ are suggested, which keeps them near fair on the market. The gain comes from team context.
 
 ## Caveats
 - Sleeper's API is read-only, so you send the proposals yourself in the Sleeper app.

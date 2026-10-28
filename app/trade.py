@@ -16,6 +16,12 @@ from .league import POSITIONS, SELL_AGE, SLOT_ELIGIBLE
 from .tendencies import package_value
 
 YOUNG_AGE, OLD_AGE = 24.5, 27.5
+# How quickly acceptance falls as a deal gets worse for them. Calibrated on ~190 completed
+# trades in two leagues: the side that gave up more value lost a median ~26% (by the model's
+# own blend of market and team context), so even lopsided-looking deals do get accepted.
+# With 0.20, a fair deal is about a coin flip and a deal like that median one scores ~20.
+ACCEPT_SCALE = 0.20
+LIKELY, POSSIBLE = 60, 35
 
 
 def context_value(a: dict, team: dict, tend: dict | None = None) -> float:
@@ -148,7 +154,7 @@ def acceptance(gain_pct: float, tend: dict, n_recv: int, n_sent: int) -> tuple[f
         reasons.append("Historically a tough negotiator.")
     elif tend.get("value_edge", 0) <= -0.08:
         reasons.append("Historically accepts below-market deals.")
-    score = 100 / (1 + math.exp(-(adj - threshold) / 0.045))
+    score = 100 / (1 + math.exp(-(adj - threshold) / ACCEPT_SCALE))
     return score, reasons
 
 
@@ -187,7 +193,7 @@ def evaluate(lg, a_rid: int, a_gives: list[dict], b_rid: int, b_gives: list[dict
             "roster_id": team["roster_id"], "manager": team["manager"], "window": team["window"],
             "gets_value": round(recv), "gives_value": round(sent), "gain": round(gain),
             "gain_pct": round(gain_pct * 100, 1), "verdict": _verdict(gain_pct, team["manager"]),
-            "acceptance": round(acc), "acceptance_label": "Likely" if acc >= 65 else "Possible" if acc >= 40 else "Unlikely",
+            "acceptance": round(acc), "acceptance_label": "Likely" if acc >= LIKELY else "Possible" if acc >= POSSIBLE else "Unlikely",
             "acceptance_reasons": reasons, "roster_cuts": cut_names,
             "impact": _impact(lg, team, gets, gives),
         })

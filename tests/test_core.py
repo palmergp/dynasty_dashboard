@@ -214,3 +214,12 @@ def test_config_remembers_league_profiles(tmp_path, monkeypatch):
     profiles = config.load()["profiles"]
     assert profiles["A"]["username"] == "me" and profiles["A"]["my_strategy"] == "rebuild"
     assert profiles["B"]["username"] == "friend"
+
+
+def test_acceptance_calibration():
+    """Calibrated on real trades: a fair deal is about a coin flip, and a deal like the
+    median losing side of a real accepted trade (-26%) is unlikely but not impossible."""
+    fair = acceptance(0.0, {}, 1, 1)[0]
+    assert 40 <= fair <= 55
+    assert 12 <= acceptance(-0.26, {}, 1, 1)[0] <= 30
+    assert acceptance(0.15, {}, 1, 1)[0] >= 60
