@@ -652,6 +652,7 @@ async function viewSettings() {
       <p class="muted small">History: ${(ov.league.history || []).map(h => `${h.season} ${esc(h.name)} (${h.teams})${h.linked ? " · linked" : ""}`).join(" ← ")}</p>
       <p class="muted small">${esc(ov.league.name)} · ${ov.league.season} · ${ov.league.teams} teams · ${ov.league.superflex ? "Superflex" : "1QB"} · ${ov.league.ppr} PPR · starters: ${ov.league.slots.join(", ")}</p>
       <div class="row"><button class="primary" id="s-save-league">Save</button><button id="s-refresh">Refresh all data from Sleeper & value sources</button></div>
+      <div id="s-league-status" class="small" role="status" aria-live="polite"></div>
       <p class="muted small">Data is cached: rosters 15 min, values 12 h, player DB 24 h. Last build: ${new Date(ov.built * 1000).toLocaleString()}.</p>
     </div>
     <div class="card"><h2>Valuation</h2>
@@ -673,17 +674,34 @@ async function viewSettings() {
 }
 function wireSettings() {
   $$(".s-w").forEach(r => r.oninput = () => (r.nextElementSibling.textContent = r.value));
-  $("#s-save-league").onclick = async () => {
+  $("#s-save-league").onclick = async e => {
+    const btn = e.target, status = $("#s-league-status");
     const linked = $("#s-linked").value.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
-    await api("/api/config", { method: "POST", body: { league_id: $("#s-league").value.trim(), username: $("#s-user").value.trim(), my_strategy: $("#s-strat").value, linked_league_ids: linked } });
-    invalidate(); toast("Saved"); route();
+    btn.disabled = true; btn.textContent = "Saving…";
+    status.className = "small muted";
+    status.textContent = "Loading the league… A league you haven't opened before can take a minute while every season downloads.";
+    let r;
+    try {
+      r = await api("/api/config", { method: "POST", body: { league_id: $("#s-league").value.trim(), username: $("#s-user").value.trim(), my_strategy: $("#s-strat").value, linked_league_ids: linked } });
+    } catch (err) {
+      btn.disabled = false; btn.textContent = "Save";
+      status.className = "small delta-neg"; status.textContent = err.message;
+      return;
+    }
+    invalidate();
+    await route();
+    const msg = `✓ Saved. Now showing ${r.league} (${r.season}, ${r.teams} teams).`;
+    toast(r.warning ? "Saved, with a warning" : "Saved");
+    const s2 = $("#s-league-status");
+    if (s2) { s2.className = r.warning ? "small delta-neg" : "small delta-pos"; s2.textContent = r.warning ? `${msg} ${r.warning}` : msg; }
   };
   $("#s-refresh").onclick = async e => {
     e.target.disabled = true; e.target.textContent = "Refreshing…";
     try { await api("/api/refresh", { method: "POST" }); toast("Data refreshed"); } catch (err) { toast("Refresh failed: " + err.message); }
     invalidate(); route();
   };
-  $("#s-save-val").onclick = async () => {
+  $("#s-save-val").onclick = async e => {
+    e.target.disabled = true; e.target.textContent = "Saving…";
     const w = {}; $$(".s-w").forEach(r => (w[r.dataset.k] = +r.value));
     await api("/api/config", { method: "POST", body: { source_weights: w, consolidation_exponent: +$("#s-exp").value, suggestion_min_value: +$("#s-min").value } });
     for (const inp of $$(".s-pm")) await api("/api/override", { method: "POST", body: { kind: "pick", key: inp.dataset.k, value: inp.value === "" ? null : +inp.value } });

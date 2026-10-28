@@ -297,12 +297,27 @@ def overrides():
 
 @app.post("/api/config")
 def set_config(body: dict):
-    cfg = config.save(body)
-    if {"league_id", "username", "linked_league_ids"} & set(body):
-        league(force=True)
+    keys = ("league_id", "username", "linked_league_ids")
+    new, old = config.merged(body), config.load()
+    if any(new.get(k) != old.get(k) for k in keys):
+        # Load the new league before saving, so a bad ID doesn't leave the app broken.
+        # Cached data is reused; Refresh forces a re-download.
+        try:
+            lg = League(new)
+        except Exception as e:
+            why = (f"Sleeper has no league with ID {new['league_id']}. Check the ID"
+                   if "404" in str(e) or "no league" in str(e) else str(e))
+            raise HTTPException(400, f"Couldn't load that league, so nothing was saved. {why}.")
+        cfg = config.save(body)
+        with _lock:
+            _state["league"], _state["built"] = lg, time.time()
     else:
+        cfg = config.save(body)
         _rebuild()
-    return cfg
+    lg = league()
+    user, name = cfg["username"], lg.info.get("name")
+    warning = None if lg.me else f"{user} isn't a manager in {name}; check the username."
+    return {"config": cfg, "league": lg.info.get("name"), "season": lg.season, "teams": len(lg.teams), "warning": warning}
 
 
 @app.post("/api/refresh")

@@ -38,7 +38,8 @@ def load() -> dict:
     return cfg
 
 
-def save(updates: dict) -> dict:
+def merged(updates: dict) -> dict:
+    """The current config with updates applied, without saving."""
     cfg = load()
     for k, v in updates.items():
         if k not in DEFAULTS:
@@ -47,6 +48,11 @@ def save(updates: dict) -> dict:
             cfg[k].update(v)
         else:
             cfg[k] = v
+    return cfg
+
+
+def save(updates: dict) -> dict:
+    cfg = merged(updates)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     return cfg
