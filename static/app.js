@@ -36,7 +36,7 @@ async function teamData(rid, force) {
 }
 function invalidate() {
   state.ov = null; state.teamCache = {}; state.draftsData = null; state.waiversData = null; state.rankingsData = null;
-  state.pickupsData = null; state.breakoutsData = null; state.reviewData = null; state.recordsData = null; state.backtestData = null;
+  state.pickupsData = null; state.breakoutsData = null; state.reviewData = null; state.recordsData = null; state.backtestData = null; state.seasonData = null; state.draftPrepData = null;
 }
 
 // ---------------------------------------------------------------- help tooltips
@@ -1629,13 +1629,165 @@ async function viewRecords() {
   ])}`;
 }
 
+// ---------------------------------------------------------------- season: playoff odds
+Object.assign(HELP, {
+  playoffOdds: "Share of simulated seasons in which the team makes the playoffs. Each sim plays out the remaining schedule using every team's best projected lineup each week (Sleeper projections), with the league's own week-to-week spread.",
+  byeOdds: "Share of sims finishing as a top-2 seed (first-round bye).",
+  titleOdds: "Share of sims ending in a championship, playing the playoffs with each team's projected strength in the playoff weeks.",
+  projWins: "Average final regular-season wins across the sims.",
+  weeklyProj: "Average projected points of the team's best lineup over the remaining regular-season weeks.",
+  sosLeft: "Average projected score of remaining opponents minus the league average. Positive = a harder schedule ahead.",
+  sosPast: "Average points scored against the team so far minus the league average. Positive = they've faced tougher opponents (or unlucky weeks).",
+  projSlot: "Average rookie-draft slot across the sims, using the draft-order rule this league used last year.",
+});
+async function seasonData() {
+  if (!state.seasonData) state.seasonData = await api("/api/season");
+  return state.seasonData;
+}
+// Normal CDF, for single-game win chances.
+const ncdf = z => 0.5 * (1 + Math.sign(z) * Math.sqrt(1 - Math.exp(-2 * z * z / Math.PI)));
+const pctCellNum = v => `<td class="num" data-sort="${v}">${v >= 99.95 ? "100" : v < 0.05 ? "0" : v.toFixed(1)}%</td>`;
+// Schedule strength is neither good nor bad news by sign, so it isn't colored.
+const sosTxt = v => v == null ? "–" : Math.abs(v) < 0.05 ? "0.0" : `${v > 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}`;
+const ruleTxt = r => r === "record" ? "worst record first" : "lowest max points (potential points) first";
+
+async function viewSeason() {
+  const S = await seasonData();
+  const me = S.teams.find(t => t.roster_id === S.me);
+  setTimeout(() => drawSeason(S), 0);
+  const rec = t => `${t.wins}-${t.losses}${t.ties ? "-" + t.ties : ""}`;
+  return `<div class="card"><h1>Playoff odds</h1>
+    <p class="muted">${fmt(S.sims)} simulations of the remaining ${S.weeks_left.length} regular-season week${S.weeks_left.length === 1 ? "" : "s"}${S.weeks_left.length ? ` (weeks ${S.weeks_left[0]}–${S.weeks_left[S.weeks_left.length - 1]})` : ""} and the playoffs.
+      Each team scores around its best projected lineup that week (Sleeper projections), give or take this league's typical swing of ${S.sd} points. Top ${S.playoff_teams} make the playoffs.</p>
+    ${me ? `<div class="tiles">
+      <div class="tile"><div class="k">Your record</div><div class="v">${rec(me)}</div><div class="d muted">projected ${me.proj_wins} wins</div></div>
+      <div class="tile"><div class="k">${hint("Playoff odds", HELP.playoffOdds)}</div><div class="v">${me.playoff_pct.toFixed(1)}%</div><div class="d muted">bye ${me.bye_pct.toFixed(1)}% · title ${me.title_pct.toFixed(1)}%</div></div>
+      <div class="tile"><div class="k">${hint("Schedule ahead", HELP.sosLeft)}</div><div class="v">${me.sos_left == null ? "–" : (me.sos_left > 0 ? "+" : "") + me.sos_left.toFixed(1)}</div><div class="d muted">${me.sos_left == null ? "" : me.sos_left > 2 ? "harder than average" : me.sos_left < -2 ? "easier than average" : "about average"}</div></div>
+      <div class="tile"><div class="k">${hint("Projected draft slot", HELP.projSlot)}</div><div class="v">${me.avg_slot.toFixed(1)}</div><div class="d muted">${S.draft_season} rookie draft · <a href="#/draftprep">draft prep</a></div></div>
+    </div>` : ""}</div>
+  <div class="grid g2">
+    <div class="card"><h2>Playoff chances</h2>
+      ${legendHTML([{ label: "Bye (top 2)", color: "var(--series-1)", rect: true }, { label: "Playoffs, no bye", color: "var(--series-2)", rect: true }])}
+      <div id="ss-bars"></div>
+    </div>
+    ${me ? `<div class="card"><h2>Your remaining schedule</h2><table>
+      <thead><tr><th>Week</th><th>Opponent</th><th class="num">You</th><th class="num">Them</th><th class="num">Win chance</th></tr></thead>
+      <tbody>${me.remaining.map(g => { const p = ncdf((g.proj - (g.opp_proj ?? 0)) / (S.sd * Math.SQRT2)) * 100;
+        return `<tr><td>${g.week}</td><td>${esc(g.opp_manager || "–")}</td><td class="num">${g.proj.toFixed(1)}</td><td class="num">${g.opp_proj == null ? "–" : g.opp_proj.toFixed(1)}</td>
+          <td class="num ${p >= 55 ? "delta-pos" : p <= 45 ? "delta-neg" : ""}" data-sort="${p.toFixed(1)}">${p.toFixed(0)}%</td></tr>`; }).join("") || '<tr><td colspan="5" class="muted">Regular season is over.</td></tr>'}</tbody>
+    </table><p class="muted small">Projected points are each lineup's best possible starters this week. Win chance assumes the league's typical ${S.sd}-point swing.</p></div>` : ""}
+  </div>
+  <div class="card"><h2>All teams</h2><div class="scroll"><table>
+    <thead><tr><th>Team</th><th>Record</th><th class="num">Points</th><th class="num">${hint("Proj. wins", HELP.projWins)}</th><th class="num">${hint("Playoffs", HELP.playoffOdds)}</th>
+      <th class="num">${hint("Bye", HELP.byeOdds)}</th><th class="num">${hint("Title", HELP.titleOdds)}</th><th class="num">Last place</th><th class="num">${hint("Weekly proj.", HELP.weeklyProj)}</th>
+      <th class="num">${hint("Schedule ahead", HELP.sosLeft)}</th><th class="num">${hint("Schedule so far", HELP.sosPast)}</th><th class="num">${hint("Draft slot", HELP.projSlot)}</th></tr></thead>
+    <tbody>${S.teams.map(t => `<tr class="${t.roster_id === S.me ? "me" : ""}"><td><b>${esc(t.manager)}</b></td><td data-sort="${t.wins + 0.5 * t.ties}">${rec(t)}</td>
+      <td class="num">${fmt(t.fpts)}</td><td class="num">${t.proj_wins.toFixed(1)}</td>${pctCellNum(t.playoff_pct)}${pctCellNum(t.bye_pct)}${pctCellNum(t.title_pct)}${pctCellNum(t.last_pct)}
+      <td class="num">${t.weekly_proj == null ? "–" : t.weekly_proj.toFixed(1)}</td>
+      <td class="num" data-sort="${t.sos_left ?? ""}">${sosTxt(t.sos_left)}</td><td class="num" data-sort="${t.sos_past ?? ""}">${sosTxt(t.sos_past)}</td>
+      <td class="num">${t.avg_slot.toFixed(1)}</td></tr>`).join("")}</tbody>
+  </table></div>
+  <p class="muted small">Draft slots use this league's rule from last year: non-playoff teams by ${ruleTxt(S.draft_rule)}, then playoff teams by the round they went out in, champion last.</p></div>`;
+}
+function drawSeason(S) {
+  const host = $("#ss-bars");
+  if (!host) return;
+  const rows = [...S.teams].sort((a, b) => b.playoff_pct - a.playoff_pct).map(t => ({ label: t.manager,
+    parts: { bye: t.bye_pct, rest: Math.max(0, t.playoff_pct - t.bye_pct) },
+    tip: { bye: `${t.bye_pct.toFixed(1)}% bye`, rest: `${t.playoff_pct.toFixed(1)}% playoffs in total` } }));
+  const draw = () => stackedBars(host, { rows, keys: ["bye", "rest"], labels: { bye: "Bye (top 2)", rest: "Playoffs, no bye" }, max: 100,
+    text: v => v >= 8 ? `${Math.round(v)}%` : "", title: "Playoff chances" });
+  draw();
+  onResize(draw);
+}
+
+// ---------------------------------------------------------------- draft prep
+Object.assign(HELP, {
+  pickRange: "The middle 80% of simulated outcomes for this pick's slot.",
+  bpaRate: "How often this manager took the most valuable player still on the board (by draft-day value).",
+  avgRank: "Average value rank of their pick among players still available. 1 = always the best available; higher = they reach for need or preference.",
+  posLean: "Positions they draft more than the league does (startup and rookie drafts).",
+  mockAvail: "Share of mock drafts in which this player is still on the board at your pick.",
+  mockTaken: "Share of mock drafts in which you'd take him there (best value × your needs, with some randomness).",
+  replay: "Last year's rookie draft replayed pick by pick: given who was already gone, how often the model's first choice (or top 3) was the actual pick, vs. simply taking the best available player.",
+});
+async function draftPrepData() {
+  if (!state.draftPrepData) state.draftPrepData = await api("/api/draft-prep");
+  return state.draftPrepData;
+}
+function slotHeat(p) {
+  const b = p >= 0.6 ? 4 : p >= 0.3 ? 3 : p >= 0.1 ? 2 : p >= 0.02 ? 1 : 0;
+  return b ? `style="background:var(--age-${b});color:var(--on-age-${b})"` : "";
+}
+async function viewDraftPrep() {
+  const D = await draftPrepData();
+  const me = D.me;
+  const mine = D.picks.filter(p => p.owner_rid === me);
+  const firstRound = D.picks.filter(p => p.round === 1 && p.slot_probs).sort((a, b) => a.exp_slot - b.exp_slot);
+  const myCap = D.capital.find(c => c.roster_id === me);
+  const capRank = D.capital.findIndex(c => c.roster_id === me) + 1;
+  const R = D.replay;
+  setTimeout(() => drawDraftPrep(D), 0);
+  const lean = h => ["QB", "RB", "WR", "TE"].filter(k => h.pos_bias[k] >= 0.15).map(k => posBadge(k)).join(" ") || '<span class="muted">balanced</span>';
+  return `<div class="card"><h1>${D.season} rookie draft prep</h1>
+    <p class="muted">${D.projected ? `Pick slots come from the <a href="#/season">season simulation</a>: non-playoff teams pick by ${ruleTxt(D.draft_rule)} (the rule this league used last year), then playoff teams, champion last.` : "Slots for this draft aren't projected yet."}
+      ${D.snake ? "Snake draft." : "Linear draft: the same slot every round."} Pick values use the blended market value for an early, mid or late pick in that round.</p>
+    <div class="tiles">
+      <div class="tile"><div class="k">Your picks</div><div class="v">${mine.length}</div><div class="d muted">${mine.filter(p => p.round === 1).length} first-rounder(s)</div></div>
+      <div class="tile"><div class="k">Pick capital</div><div class="v">${myCap ? compact(myCap.value) : "0"}</div><div class="d muted">${capRank ? `#${capRank} of ${D.capital.length} for this draft` : "no picks"}</div></div>
+      <div class="tile"><div class="k">Your first pick</div><div class="v">${mine.length ? esc(mine[0].label) : "–"}</div><div class="d muted">${mine.length && mine[0].range ? `likely ${mine[0].range[0] === mine[0].range[1] ? `slot ${mine[0].range[0]}` : `slots ${mine[0].range[0]}–${mine[0].range[1]}`}` : ""}</div></div>
+      ${R ? `<div class="tile"><div class="k">${hint("Mock accuracy (last draft)", HELP.replay)}</div><div class="v">${Math.round(R.top1 * 100)}%</div><div class="d muted">exact pick · ${Math.round(R.top3 * 100)}% in top 3 · best-available alone ${Math.round(R.bpa_top1 * 100)}%</div></div>` : ""}
+    </div></div>
+  <div class="grid g2">
+    <div class="card"><h2>Your picks</h2><table>
+      <thead><tr><th>Projected</th><th>Original team</th><th class="num">${hint("Likely slots", HELP.pickRange)}</th><th class="num">Value</th></tr></thead>
+      <tbody>${mine.map(p => `<tr><td><b>${esc(p.label)}</b></td><td>${esc(p.orig || "")}${p.orig_rid === me ? ' <span class="muted small">(own)</span>' : ""}</td>
+        <td class="num">${p.range ? (p.range[0] === p.range[1] ? p.range[0] : `${p.range[0]}–${p.range[1]}`) : "–"}</td><td class="num">${fmt(p.value)}</td></tr>`).join("") || '<tr><td colspan="4" class="muted">You have no picks in this draft.</td></tr>'}</tbody>
+    </table></div>
+    <div class="card"><h2>Pick capital for this draft</h2><div id="dp-cap"></div>
+      <p class="muted small">Total value of each team's picks in the ${D.season} draft, at their projected slots.</p></div>
+  </div>
+  ${firstRound.length ? `<div class="card"><h2>Projected first round</h2>
+    <div class="row spread"><span class="scale">Chance ${[1, 2, 3, 4].map(b => `<i style="background:var(--age-${b})"></i>`).join("")} higher</span><span class="muted small">Each row is a team's own first-round pick; cells are the chance it lands in that slot.</span></div>
+    <div class="scroll"><table class="heat" style="margin-top:8px"><thead><tr><th>Pick (owner)</th>${firstRound[0].slot_probs.map((_, i) => `<th class="num">${i + 1}</th>`).join("")}<th class="num">Avg</th></tr></thead>
+      <tbody>${firstRound.map(p => `<tr class="${p.owner_rid === me ? "me" : ""}"><td><b>${esc(p.orig)}</b>${p.owner_rid !== p.orig_rid ? ` <span class="muted small">→ ${esc(p.owner)}</span>` : ""}</td>
+        ${p.slot_probs.map((x, i) => `<td class="hc" ${slotHeat(x)} ${tipAttr(`${p.orig}'s 1st: ${(x * 100).toFixed(1)}% to be pick ${i + 1}`, false)}>${x >= 0.005 ? Math.round(x * 100) : ""}</td>`).join("")}
+        <td class="num">${p.exp_slot.toFixed(1)}</td></tr>`).join("")}</tbody></table></div></div>` : ""}
+  ${D.board.length ? `<div class="grid g2">
+    <div class="card"><h2>Big board</h2><div class="scroll"><table><thead><tr><th class="num">#</th><th></th><th>Player</th><th class="num">Value</th></tr></thead>
+      <tbody>${D.board.map((b, i) => `<tr><td class="num">${i + 1}</td><td>${posBadge(b.pos)}</td><td><b>${esc(b.name)}</b> <span class="muted small">${esc(b.nfl_team || "")}</span></td><td class="num">${fmt(b.value)}</td></tr>`).join("")}</tbody></table></div></div>
+    <div class="card"><h2>Mock drafts: who's there at your picks</h2>
+      ${D.mock.map(m => `<h3>${esc(m.label)}</h3><table><thead><tr><th></th><th>Player</th><th class="num">${hint("Available", HELP.mockAvail)}</th><th class="num">${hint("You take him", HELP.mockTaken)}</th></tr></thead>
+        <tbody>${m.candidates.map(c => `<tr><td>${posBadge(c.pos)}</td><td>${esc(c.name)}</td><td class="num">${Math.round(c.available * 100)}%</td><td class="num">${Math.round(c.taken * 100)}%</td></tr>`).join("")}</tbody></table>`).join("")}
+    </div></div>` : `<div class="card"><h2>Big board and mock drafts</h2>
+    <p class="muted">The ${D.season} rookie class isn't in the value sources yet. Players get dynasty values after the NFL draft in late April.
+      Once they do, this page shows a big board and mock drafts: who's likely to be on the board at each of your picks, simulated with every manager's draft habits and needs (below).</p></div>`}
+  <div class="card"><h2>How each manager drafts</h2><div class="scroll"><table>
+    <thead><tr><th>Manager</th><th class="num">Picks</th><th class="num">QB</th><th class="num">RB</th><th class="num">WR</th><th class="num">TE</th><th>${hint("Leans", HELP.posLean)}</th>
+      <th class="num">${hint("Best available", HELP.bpaRate)}</th><th class="num">${hint("Avg rank taken", HELP.avgRank)}</th><th>Needs now</th></tr></thead>
+    <tbody>${D.habits.map(h => `<tr class="${h.roster_id === me ? "me" : ""}"><td><b>${esc(h.manager)}</b></td><td class="num">${h.n}</td>
+      ${["QB", "RB", "WR", "TE"].map(k => `<td class="num">${Math.round(h.pos_share[k] * 100)}%</td>`).join("")}<td>${lean(h)}</td>
+      <td class="num">${h.bpa_rate == null ? "–" : Math.round(h.bpa_rate * 100) + "%"}</td><td class="num">${h.avg_rank ?? "–"}</td>
+      <td>${h.needs.map(posBadge).join(" ") || '<span class="muted">–</span>'}</td></tr>`).join("")}</tbody>
+  </table></div><p class="muted small">From every startup and rookie draft in the league's history. Needs are long-term positional needs (dynasty value vs. the league).</p></div>`;
+}
+function drawDraftPrep(D) {
+  const host = $("#dp-cap");
+  if (!host || !D.capital.length) return;
+  const rows = D.capital.map(c => ({ label: c.manager, parts: { v: c.value }, tip: { v: `${c.n} pick(s), ${c.firsts} first(s) · ${fmt(c.value)} value` } }));
+  const draw = () => stackedBars(host, { rows, keys: ["v"], labels: { v: "Pick value" }, max: Math.max(...D.capital.map(c => c.value)),
+    text: v => compact(v), title: "Pick capital" });
+  draw();
+  onResize(draw);
+}
+
 // ---------------------------------------------------------------- router
 const ROUTES = [
   [/^#?\/?$/, viewDashboard], [/^#\/partners$/, viewPartners], [/^#\/trade$/, viewTrade],
   [/^#\/team(?:\/(\d+))?$/, viewTeam], [/^#\/players$/, viewPlayers], [/^#\/history$/, viewHistory],
   [/^#\/drafts$/, viewDrafts], [/^#\/drafts\/(\d+)$/, viewDraftTeam],
   [/^#\/waivers$/, viewWaivers], [/^#\/waivers\/(\d+)$/, viewWaiverTeam],
-  [/^#\/rankings$/, viewRankings], [/^#\/records$/, viewRecords], [/^#\/pickups$/, viewPickups], [/^#\/breakouts$/, viewBreakouts],
+  [/^#\/rankings$/, viewRankings], [/^#\/records$/, viewRecords], [/^#\/season$/, viewSeason], [/^#\/draftprep$/, viewDraftPrep], [/^#\/pickups$/, viewPickups], [/^#\/breakouts$/, viewBreakouts],
   [/^#\/settings$/, viewSettings],
 ];
 async function route() {

@@ -59,6 +59,8 @@ Run `git pull` (or download a fresh ZIP), then start the app again as usual. The
 |---|---|
 | **Dashboard** | Your window, ranks, sell candidates and positional outlook. Also a league table of every team's window, strength, picks, needs and tendency tags. |
 | **Rankings** | Franchise score rankings (players + picks vs. league average), and a league map (win-now strength vs. franchise value, in four quadrants). Also franchise composition (top-10 players / depth / picks), roster value over time, a positional strength heatmap (now and long-term), and age structure. |
+| **Playoff Odds** | Playoff, bye, title and last-place odds for every team, from simulating the rest of the season with weekly projections. Also projected wins, strength of schedule ahead and so far, your remaining games with win chances, and each team's projected rookie-draft slot. |
+| **Draft Prep** | The next rookie draft: your picks with projected slots and values, pick capital by team, a heatmap of where every first-round pick will likely land, and how each manager drafts (position leanings, how often they take the best available). Once the rookie class has values after the NFL draft, it adds a big board and mock drafts of who's likely available at each of your picks. |
 | **Trade Partners** | Teams ranked by fit, with 3 suggested packages each. Each package shows market fairness, your team-context gain, their acceptance likelihood, and the reasons behind it. |
 | **Trade Evaluator** | Build any trade between two teams by clicking assets. Shows the market verdict, a per-source breakdown, and for each side: context value, lineup impact, age change, pick capital, roster cuts and acceptance. "Suggest trades with Team B" generates packages for one partner. |
 | **Teams** | Roster with values and notes, needs, and a manager profile with tendency bars and auto notes. Also your own notes on the manager, a window override, and their trade history. |
@@ -167,6 +169,17 @@ One install can hold several leagues. Each league you've opened is saved under *
   - The suggested drop is your active player with the lowest pickup score. Open roster or taxi spots are used first.
   - The suggested bid is the median winning bid on the 8 most similar-value claims in this league over the last two seasons.
 - **In trades:** rebuilding teams value breakout upside up to 15% more, and suggestions call out "buy before a breakout" targets. Player notes include contract and breakout signals.
+
+**Playoff odds** (`app/season.py`)
+- Each team's weekly mean is its best possible lineup from Sleeper's player projections for that week, so byes and injuries count. Scores vary by the league's own week-to-week spread (the standard deviation of teams' scores around their averages).
+- 4,000 simulations of the remaining schedule rank teams by wins, then points for. With 6 playoff teams, seeds 1–2 get byes. The playoffs are played with each team's projected strength in the playoff weeks.
+- **Rookie-draft order** uses whichever rule reproduces the league's last rookie draft: non-playoff teams by max points ("potential points", lowest first) or by record (worst first). Playoff teams follow by the round they went out in, champion last.
+
+**Draft prep** (`app/draftprep.py`)
+- Pick slots are the simulated draft-order distribution. Values are the blended market value for an early, mid or late pick in that round.
+- **Manager habits** come from every startup and rookie draft: position shares vs. the league (shrunk toward average for small samples) and how often they took the most valuable player left.
+- **Mock drafts** run each simulated draft order. Each manager takes the best value × position habit × positional need, with some randomness.
+- **Mock check:** replaying the 2026 rookie draft pick by pick, the model's first choice was the actual pick 42% of the time and in its top 3 67% of the time. Always taking the best available player scored 39%.
 
 **Trade review** (`app/retro.py`)
 - Each side's haul is valued as a package (with the stud premium) at every weekly DynastyProcess snapshot from the trade date on, so then, peak and now are on one consistent scale.

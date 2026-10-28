@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, drafts, opportunity, pickups, rankings, records, retro, store, suggest, trade, waivers
+from . import config, draftprep, drafts, opportunity, pickups, rankings, records, retro, season, store, suggest, trade, waivers
 from .config import ROOT
 from .league import League
 from .values import SOURCE_LABELS
@@ -234,6 +234,22 @@ def backtest_report():
     """Separate from /api/breakouts: the first run downloads several seasons of history."""
     lg = league()
     return _memo("backtest", lg, lambda: _clean(opportunity.backtest_report(lg)))
+
+
+def _season(lg):
+    return _memo("season", lg, lambda: season.simulate(lg))
+
+
+@app.get("/api/season")
+def season_report():
+    lg = league()
+    return {**_clean(_season(lg)), "me": lg.me["roster_id"] if lg.me else None}
+
+
+@app.get("/api/draft-prep")
+def draft_prep():
+    lg = league()
+    return _memo("draftprep", lg, lambda: _clean(draftprep.analyze(lg, _season(lg))))
 
 
 @app.get("/api/trade-review")
