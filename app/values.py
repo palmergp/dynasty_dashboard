@@ -252,7 +252,7 @@ class ValueBook:
                 self.redraft[sid] = dv * min(r, 1.0) * 0.6
 
         self.weights = weights
-        self.overrides = store.load_overrides()
+        self.overrides = store.load_overrides(cfg["league_id"])
 
     # -- players
     def player(self, sid: str) -> dict:

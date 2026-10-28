@@ -190,3 +190,27 @@ def test_trade_review_even_threshold():
     assert not retro._decided(400, 6000)     # under 8% of the bigger side
     assert retro._decided(600, 6000)
     assert retro._gap(-500, 5000) == {"gap": -500, "pct": -10.0}
+
+
+def test_user_data_is_per_league(tmp_path, monkeypatch):
+    from app import store
+    monkeypatch.setattr(store, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(store, "LEGACY_PATH", tmp_path / "user.json")
+    (tmp_path / "user.json").write_text('{"player_notes": {"1": "old shared note"}}', encoding="utf-8")
+    store.migrate_legacy("A")                      # the old shared file moves to the first league used
+    assert store.load("A")["player_notes"] == {"1": "old shared note"}
+    assert not (tmp_path / "user.json").exists()
+    store.set_entry("B", "player_notes", "2", "only in B")
+    assert "2" not in store.load("A")["player_notes"]
+    assert store.load("B")["player_notes"] == {"2": "only in B"}
+
+
+def test_config_remembers_league_profiles(tmp_path, monkeypatch):
+    from app import config
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(config, "CONFIG_PATH", tmp_path / "config.json")
+    config.save({"league_id": "A", "username": "me", "my_strategy": "rebuild"})
+    config.save({"league_id": "B", "username": "friend", "my_strategy": "auto"})
+    profiles = config.load()["profiles"]
+    assert profiles["A"]["username"] == "me" and profiles["A"]["my_strategy"] == "rebuild"
+    assert profiles["B"]["username"] == "friend"

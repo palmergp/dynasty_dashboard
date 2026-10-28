@@ -23,7 +23,11 @@ DEFAULTS = {
     "consolidation_exponent": 1.35,
     # Minimum market value for an asset to be offered/requested in generated trades.
     "suggestion_min_value": 800,
+    # Per-league settings, remembered so switching back to a league restores them:
+    # league_id -> {"name", "username", "my_strategy", "linked_league_ids"}.
+    "profiles": {},
 }
+PROFILE_KEYS = ("username", "my_strategy", "linked_league_ids")
 
 
 def load() -> dict:
@@ -53,6 +57,8 @@ def merged(updates: dict) -> dict:
 
 def save(updates: dict) -> dict:
     cfg = merged(updates)
+    prof = cfg["profiles"].setdefault(str(cfg["league_id"]), {})
+    prof.update({k: cfg[k] for k in PROFILE_KEYS})
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     return cfg

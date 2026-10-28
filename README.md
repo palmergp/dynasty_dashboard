@@ -82,7 +82,7 @@ Some leagues restart in a new Sleeper league, for example to add teams, and Slee
 
 Trade tendencies, the Drafts, Waivers and Rankings pages, and roster construction all use the combined history. The Settings page shows the season chain that was built. Value history is fetched back to just before the league's first draft, so old drafts get real draft-day values.
 
-Each install has one league at a time. A friend should run their own copy (copy the folder without `data/`), because notes and overrides in `data/user.json` aren't kept per league.
+One install can hold several leagues. Each league you've opened is saved under **Settings › Saved leagues**, with its own username, strategy and linked IDs. Notes, value overrides and window overrides are kept per league, so switching never mixes them.
 
 ## How the model works
 
@@ -198,8 +198,8 @@ Each install has one league at a time. A friend should run their own copy (copy 
 
 ## Data files
 All local data lives in `data/` (git-ignored):
-- `config.json`: settings.
-- `user.json`: your notes, overrides and window overrides.
+- `config.json`: settings, including a saved profile for each league you've opened.
+- `leagues/<league id>/user.json`: that league's notes, value overrides and window overrides.
 - `cache/`: API responses. Delete it to force a full refresh.
 
 ## Data sources and terms

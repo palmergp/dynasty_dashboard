@@ -48,7 +48,8 @@ class League:
         raw_rosters = sleeper.rosters(lid, force=force)
         self.players_db = sleeper.players(force)
         self.values = ValueBook(self.info, cfg, force)
-        self.user_data = store.load()
+        store.migrate_legacy(lid)
+        self.user_data = store.load(lid)
         self.season = int(self.info["season"])
         self.slots = [s for s in self.info.get("roster_positions", []) if s in SLOT_ELIGIBLE]
         self.superflex = "SUPER_FLEX" in self.slots or self.slots.count("QB") > 1

@@ -25,7 +25,17 @@ def league(force: bool = False) -> League:
         if force or _state["league"] is None:
             _state["league"] = League(config.load(), force=force)
             _state["built"] = time.time()
+            _remember_name(_state["league"])
         return _state["league"]
+
+
+def _remember_name(lg):
+    """Label the league's saved profile with its name (shown in Settings › Saved leagues)."""
+    cfg = config.load()
+    lid = str(cfg["league_id"])
+    prof = cfg["profiles"].get(lid, {})
+    if prof.get("name") != lg.info.get("name") or not all(k in prof for k in config.PROFILE_KEYS):
+        config.save({"profiles": {**cfg["profiles"], lid: {**prof, "name": lg.info.get("name")}}})
 
 
 def _rebuild():
@@ -256,7 +266,7 @@ def notes(body: NoteIn):
     section = {"manager": "manager_notes", "player": "player_notes"}.get(body.kind)
     if not section:
         raise HTTPException(400, "kind must be manager or player")
-    store.set_entry(section, body.key, body.text.strip())
+    store.set_entry(league().cfg["league_id"], section, body.key, body.text.strip())
     _rebuild()
     return {"ok": True}
 
@@ -274,7 +284,7 @@ def window(body: WindowIn):
     if lg.me and body.user_id == lg.me["owner_id"]:
         config.save({"my_strategy": body.window or "auto"})
     else:
-        store.set_entry("window_overrides", body.user_id, body.window)
+        store.set_entry(lg.cfg["league_id"], "window_overrides", body.user_id, body.window)
     _rebuild()
     return {"ok": True}
 
@@ -290,14 +300,15 @@ def override(body: OverrideIn):
     sub = {"player": "players", "pick": "pick_multipliers"}.get(body.kind)
     if not sub:
         raise HTTPException(400, "kind must be player or pick")
-    store.set_entry("overrides", body.key, body.value, subsection=sub)
+    lid = league().cfg["league_id"]
+    store.set_entry(lid, "overrides", body.key, body.value, subsection=sub)
     _rebuild()
-    return {"ok": True, "overrides": store.load_overrides()}
+    return {"ok": True, "overrides": store.load_overrides(lid)}
 
 
 @app.get("/api/overrides")
 def overrides():
-    return store.load_overrides()
+    return store.load_overrides(league().cfg["league_id"])
 
 
 @app.post("/api/config")
@@ -314,6 +325,8 @@ def set_config(body: dict):
                    if "404" in str(e) or "no league" in str(e) else str(e))
             raise HTTPException(400, f"Couldn't load that league, so nothing was saved. {why}.")
         cfg = config.save(body)
+        config.save({"profiles": {**cfg["profiles"], str(cfg["league_id"]): {
+            **cfg["profiles"].get(str(cfg["league_id"]), {}), "name": lg.info.get("name")}}})
         with _lock:
             _state["league"], _state["built"] = lg, time.time()
     else:

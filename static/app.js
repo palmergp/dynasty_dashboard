@@ -641,6 +641,9 @@ async function viewSettings() {
   return `<div class="grid g2">
     <div class="card"><h2>League</h2>
       <div class="row">
+        ${Object.keys(c.profiles || {}).length > 1 ? `<label class="field">Saved leagues<select id="s-profile">
+          ${Object.entries(c.profiles).map(([id, p]) => `<option value="${esc(id)}" ${id === String(c.league_id) ? "selected" : ""}>${esc(p.name || id)}${p.username ? ` · ${esc(p.username)}` : ""}</option>`).join("")}
+        </select></label>` : ""}
         <label class="field">Sleeper league ID<input id="s-league" value="${esc(c.league_id)}" style="width:220px"></label>
         <label class="field">Your Sleeper username<input id="s-user" value="${esc(c.username)}"></label>
         <label class="field">Your strategy<select id="s-strat">${["auto", "rebuild", "contend"].map(s => `<option ${c.my_strategy === s ? "selected" : ""}>${s}</option>`).join("")}</select></label>
@@ -674,6 +677,17 @@ async function viewSettings() {
 }
 function wireSettings() {
   $$(".s-w").forEach(r => r.oninput = () => (r.nextElementSibling.textContent = r.value));
+  // Picking a saved league fills in its remembered settings; Save switches to it.
+  const prof = $("#s-profile");
+  if (prof) prof.onchange = () => {
+    const p = (state.ov.config.profiles || {})[prof.value] || {};
+    $("#s-league").value = prof.value;
+    if (p.username) $("#s-user").value = p.username;
+    if (p.my_strategy) $("#s-strat").value = p.my_strategy;
+    $("#s-linked").value = (p.linked_league_ids || []).join(", ");
+    $("#s-league-status").className = "small muted";
+    $("#s-league-status").textContent = `Click Save to switch to ${p.name || prof.value}.`;
+  };
   $("#s-save-league").onclick = async e => {
     const btn = e.target, status = $("#s-league-status");
     const linked = $("#s-linked").value.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
