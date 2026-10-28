@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = ROOT / "data"
+# DTH_DATA_DIR points the app at another data folder (the smoke tests use a copy).
+DATA_DIR = Path(os.environ.get("DTH_DATA_DIR") or ROOT / "data")
 CACHE_DIR = DATA_DIR / "cache"
 CONFIG_PATH = DATA_DIR / "config.json"
 

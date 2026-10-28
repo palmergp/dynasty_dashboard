@@ -8,6 +8,10 @@ const signCls = n => (n > 0.5 ? "delta-pos" : n < -0.5 ? "delta-neg" : "");
 const SRC = { fantasycalc: "FC", ktc: "KTC", dynastyprocess: "DP" };
 const WINDOW_LABEL = { contend: "Contender", middle: "Middle", rebuild: "Rebuilder" };
 
+// Record uncaught errors on <body data-js-error> so smoke tests (and you) can spot them.
+window.addEventListener("error", e => { document.body.dataset.jsError = e.message; });
+window.addEventListener("unhandledrejection", e => { document.body.dataset.jsError = String(e.reason && e.reason.message || e.reason); });
+
 const state = { ov: null, trade: { a: null, b: null, aGives: [], bGives: [] }, teamCache: {} };
 
 async function api(path, opts = {}) {

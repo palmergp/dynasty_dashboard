@@ -54,7 +54,8 @@ Run `git pull` (or download a fresh ZIP), then start the app again as usual. The
 - **Port 8000 is already in use:** stop the other server, or run `.venv\Scripts\python -m uvicorn app.main:app --port 8001` (macOS/Linux: `.venv/bin/python ...`) and open http://127.0.0.1:8001.
 - **A page shows an error after changing leagues:** check the league ID and username in Settings, then click Refresh.
 - **Starting over:** delete the `data/` folder to clear settings and cache.
-- **Tests:** `.venv\Scripts\python -m pytest` (macOS/Linux: `.venv/bin/python -m pytest`).
+- **Tests:** `.venv\Scripts\python -m pytest` (macOS/Linux: `.venv/bin/python -m pytest`) runs the fast unit tests.
+- **Smoke test:** this starts the app on a *copy* of your `data/` folder and loads every page in headless Edge or Chrome. Each page has to render its content with no JavaScript errors, and every API endpoint has to respond. It takes about a minute with a warm cache. Run it with `$env:SMOKE=1; .\.venv\Scripts\python -m pytest tests	est_smoke.py` (macOS/Linux: `SMOKE=1 .venv/bin/python -m pytest tests/test_smoke.py`).
 
 ## Pages
 
