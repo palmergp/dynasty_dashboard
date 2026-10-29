@@ -192,7 +192,7 @@ async function viewDashboard() {
     ${me ? `<div class="card">
       <div class="row spread">
         <div><h1>${esc(me.manager)} ${windowBadge(me.window, me.window_source)}</h1>
-          <div class="muted">${ov.league.season} · ${me.wins}-${me.losses}${me.ties ? "-" + me.ties : ""} · ${fmt(me.fpts)} pts for</div></div>
+          <div class="muted">${ov.league.season} · ${me.wins}-${me.losses}${me.ties ? "-" + me.ties : ""} · ${fmt(me.fpts)} pts for · <a href="#/season">playoff odds</a> · <a href="#/team/${me.roster_id}">your team</a></div></div>
         <div class="row">
           <div class="stat"><div class="k">${hint("Franchise score", HELP.franchise)}</div><div class="v">${me.franchise_score}</div><div class="muted small">#${me.franchise_rank} of ${ov.teams.length} · <a href="#/rankings">rankings</a></div></div>
           <div class="stat"><div class="k">${hint("Contend score", HELP.contend)}</div><div class="v">${me.contend_score}</div></div>
@@ -211,13 +211,13 @@ async function viewDashboard() {
           <h3>${hint("Positional outlook", HELP.outlook)}</h3>
           ${posTable(meT)}
           <p class="muted small">Now = starters' win-now value vs. league. Future = dynasty value of your top players at each position.</p>
-          <p><a href="#/partners">See best trade partners →</a></p>
+          <p><a href="#/partners">Find trades →</a></p>
         </div>
       </div>
     </div>` : `<div class="warnbox">Couldn't find "${esc(ov.config.username)}" in this league. Check Settings.</div>`}
-    ${me ? `<div class="card" id="dash-opp"><h2>Waiver wire &amp; breakout targets</h2><p class="muted">Loading…</p></div>` : ""}
+    ${me ? `<div class="card" id="dash-opp"><h2>Free agents &amp; breakout targets</h2><p class="muted">Loading…</p></div>` : ""}
     <div class="card">
-      <h2>League landscape</h2>
+      <div class="row spread"><h2>League landscape</h2><a class="small" href="#/rankings">Rankings →</a></div>
       <div class="scroll"><table>
         <thead><tr><th>Team</th><th>${hint("Window", HELP.window)}</th><th class="num">${hint("Contend", HELP.contend)}</th>
           <th class="num">${hint("Franchise", HELP.franchise)}</th><th>Record</th>
@@ -290,18 +290,18 @@ async function dashOpportunity(me) {
   const host = $("#dash-opp");
   let W, B;
   try { [W, B] = await Promise.all([pickupsData(), breakoutsData()]); }
-  catch (e) { if (host) host.innerHTML = `<h2>Waiver wire &amp; breakout targets</h2><div class="warnbox">${esc(e.message)}</div>`; return; }
+  catch (e) { if (host) host.innerHTML = `<h2>Free agents &amp; breakout targets</h2><div class="warnbox">${esc(e.message)}</div>`; return; }
   if (!$("#dash-opp")) return;
   const targets = B.players.filter(r => r.owner_rid != null && r.owner_rid !== me && r.value < 4000).slice(0, 4);
   const line = (a, right) => `<div class="asset">${posBadge(a.pos)}<div class="name">${esc(a.name)} <span class="muted small">${assetMeta(a)}</span>
     <div>${sigChips(a)}</div></div><span class="val small">${right}</span></div>`;
-  $("#dash-opp").innerHTML = `<h2>Waiver wire &amp; breakout targets</h2><div class="grid g2">
+  $("#dash-opp").innerHTML = `<h2>Free agents &amp; breakout targets</h2><div class="grid g2">
     <div><h3>${hint("Best adds for you", HELP.pickupScore)}</h3>
       ${W.suggestions.slice(0, 4).map(s => line(s.asset, `${hint("score", HELP.pickupScore)} ${fmt(s.score)}<br><span class="muted">bid ~$${s.bid.mid}</span>`)).join("") || '<p class="muted">Nobody beats your weakest player right now.</p>'}
-      <p><a href="#/pickups">Waiver wire →</a></p></div>
+      <p><a href="#/pickups">All free agents →</a></p></div>
     <div><h3>${hint("Buy before the breakout", "Players on other rosters (worth under 4,000) with the highest breakout scores.")}</h3>
       ${targets.map(r => line(r, `${hint("breakout", HELP.breakout)} ${r.breakout}<br><span class="muted">${esc(r.owner)}</span>`)).join("") || '<p class="muted">None flagged.</p>'}
-      <p><a href="#/breakouts">Breakout watch →</a></p></div>
+      <p><a href="#/breakouts">All breakouts →</a></p></div>
   </div>`;
 }
 
@@ -333,7 +333,7 @@ function suggestionCard(s, partnerRid) {
 async function viewPartners() {
   const [ov, partners] = await Promise.all([overview(), api("/api/suggestions")]);
   const me = ov.teams.find(t => t.is_me);
-  return `<div class="card"><h1>Best trade partners</h1>
+  return `<div class="card"><h1>Find trades</h1>
     <p class="muted">You're set as a <b>${WINDOW_LABEL[me.window]}</b>. Suggestions look for value arbitrage: assets worth more to them than to you
       (e.g. aging producers to contenders) for assets worth more to you (youth, picks). They're tuned by each manager's trade history.
       Acceptance is a model estimate, not a guarantee.</p></div>
@@ -624,7 +624,7 @@ async function viewHistory() {
   const flipped = shown.filter(t => t.then.leader && t.now.leader && t.then.leader !== t.now.leader).length;
   setTimeout(() => drawReview(R, shown), 0);
   const limit = tr.all ? shown.length : 40;
-  return `<div class="card"><h1>Trade review</h1>
+  return `<div class="card"><h1>Trade history</h1>
     <p class="muted">Who won each trade: the value gap ${hint("at the time", HELP.atTime)}, the ${hint("peak gap", HELP.peakGap)} since, and the gap ${hint("today", HELP.today)}.
       Values come from ${esc(R.source)}, so then and now are on one scale (they can differ a little from the blended values elsewhere). Rookie picks count at today's generic value for their round until used, then as the player drafted.
       Points are what the acquired players scored in that team's starting lineup.</p>
@@ -843,7 +843,7 @@ async function viewDrafts() {
   const pickLine = p => `<tr><td>${posBadge(p.pos)}</td><td><b>${esc(p.name)}</b><div class="muted small">${esc(p.draft)} · ${pickLabel(p, D.teams.length)} (#${p.pick_no})</div></td>
     <td><a href="#/drafts/${p.roster_id}">${esc(p.manager)}</a></td><td class="num">${fmt(p.draft_value)}</td><td class="num">${fmt(p.now_value)}</td>
     <td class="num ${signCls(p.change)}">${p.change > 0 ? "+" : ""}${fmt(p.change)}</td><td>${sparkline(p.history)}</td></tr>`;
-  return `<div class="card"><h1>Draft performance</h1>
+  return `<div class="card"><h1>Past drafts</h1>
     <p class="muted">Every pick from the startup and rookie drafts, credited to the team that made it, valued on the day it was made and every week since.
       History comes from ${esc(D.source)} (the only free source with weekly history), so "now" can differ slightly from the blended values elsewhere in the app.
       Slow drafts: each pick's date is estimated from its position between the draft's first and last pick.</p>
@@ -946,7 +946,7 @@ async function viewDraftTeam(rid) {
     return `<div class="tile"><div class="k">${esc(x.label)}</div><div class="v">${compact(s.now_value)}</div>
       <div class="d">from ${compact(s.draft_value)} on draft day · ${pctTxt(s.change_pct)}</div></div>`; }).join("");
   return `<div class="card"><div class="row spread">
-      <div><h1>${esc(team.manager)} · drafts</h1><div class="muted"><a href="#/drafts">← League drafts</a> · <a href="#/waivers/${rid}">Pickup report</a> · <a href="#/team/${rid}">Team page</a></div></div>
+      <div><h1>${esc(team.manager)} · drafts</h1><div class="muted"><a href="#/drafts">← Past drafts</a> · <a href="#/waivers/${rid}">Pickup report</a> · <a href="#/team/${rid}">Team page</a></div></div>
       <select onchange="location.hash='#/drafts/'+this.value">${D.teams.map(t => `<option value="${t.roster_id}" ${t.roster_id === rid ? "selected" : ""}>${esc(t.manager)}</option>`).join("")}</select>
     </div></div>
   <div class="filters">
@@ -1027,7 +1027,7 @@ async function viewWaivers() {
     <td class="num"><b>${field === "start_points" ? p.start_points.toFixed(1) : fmt(p[field])}</b>${field === "start_points" ? `<div class="muted small">${p.starts} starts</div>` : ""}</td><td>${sparkline(p.history)}</td></tr>`;
   setTimeout(() => drawWaivers(W), 0);
   const best = b => b ? `${posBadge(b.pos)} ${esc(b.name)}` : '<span class="muted">–</span>';
-  return `<div class="card"><h1>Waiver &amp; free-agent pickups</h1>
+  return `<div class="card"><h1>Pickup history</h1>
     <p class="muted">Every player added from waivers or free agency, held until that team dropped or traded him. Two ways to judge a pickup:
       <b>${hint("value captured", HELP.captured)}</b> (what he's worth to the team today, in dynasty value) and
       <b>${hint("start points", HELP.startPts)}</b> (fantasy points he scored in their starting lineup). Values come from ${esc(W.source)}.</p></div>
@@ -1107,7 +1107,7 @@ async function viewWaiverTeam(rid) {
   setTimeout(() => drawWaiverTeam(W, team), 0);
   const n = W.teams.length;
   return `<div class="card"><div class="row spread">
-      <div><h1>${esc(team.manager)} · pickups</h1><div class="muted"><a href="#/waivers">← League pickups</a> · <a href="#/drafts/${rid}">Draft report</a> · <a href="#/team/${rid}">Team page</a></div></div>
+      <div><h1>${esc(team.manager)} · pickups</h1><div class="muted"><a href="#/waivers">← Pickup history</a> · <a href="#/drafts/${rid}">Draft report</a> · <a href="#/team/${rid}">Team page</a></div></div>
       <select onchange="location.hash='#/waivers/'+this.value">${W.teams.map(t => `<option value="${t.roster_id}" ${t.roster_id === rid ? "selected" : ""}>${esc(t.manager)}</option>`).join("")}</select>
     </div></div>
   <div class="filters">${wvSeg(W)}</div>
@@ -1389,7 +1389,7 @@ async function viewPickups() {
   setTimeout(() => wirePickups(W, season), 0);
   const dropTxt = s => s.taxi_ok ? '<span class="pos-good">Taxi slot open</span>' : s.drop ? `${posBadge(s.drop.asset.pos)} ${esc(s.drop.asset.name)} <span class="muted small">${fmt(s.drop.score)}</span>` : '<span class="pos-good">Open roster spot</span>';
   return `${W.error ? `<div class="warnbox">Usage/contract data failed to load (${esc(W.error)}); suggestions use values only.</div>` : ""}
-  <div class="card"><h1>Waiver wire</h1>
+  <div class="card"><h1>Free agents</h1>
     <p class="muted">Every available QB/RB/WR/TE on an NFL roster, scored for your team. ${hint("Pickup score", HELP.pickupScore)} = what he's worth to you now
       plus a ${hint("breakout", HELP.breakout)} allowance for role growth (rising usage, efficiency, openings on his depth chart and contract situations).
       Based on ${usageNote(W)}, OverTheCap contracts, and your league's past claims for bids.</p>
@@ -1606,7 +1606,7 @@ function tradeAssetsHTML(x) {
   return `<div class="rec-trade">${x.sides.map(s => `<div><div class="side-h">${esc(s.manager)} got</div>
     <table data-nosort class="small"><tbody>${s.received.map(asset).join("") || '<tr><td class="muted">Nothing</td></tr>'}</tbody></table>
     ${s.faab ? `<div class="small muted">+ $${s.faab} FAAB</div>` : ""}<div class="small muted">${fmt(s.points)} start points from these players</div></div>`).join("")}
-    <div class="small muted rec-gaps">At the time: ${x.then_gap.leader ? `${esc(x.then_gap.leader)} +${fmt(x.then_gap.gap)}` : "even"} · Today: ${x.now_gap.leader ? `${esc(x.now_gap.leader)} +${fmt(x.now_gap.gap)}` : "even"} · <a href="#/history">Trade review</a></div></div>`;
+    <div class="small muted rec-gaps">At the time: ${x.then_gap.leader ? `${esc(x.then_gap.leader)} +${fmt(x.then_gap.gap)}` : "even"} · Today: ${x.now_gap.leader ? `${esc(x.now_gap.leader)} +${fmt(x.now_gap.gap)}` : "even"} · <a href="#/history">Trade history</a></div></div>`;
 }
 Object.assign(HELP, {
   titles: "Championships: winners of the final in Sleeper's playoff bracket.",
@@ -1714,7 +1714,7 @@ async function viewSeason() {
       <div class="tile"><div class="k">Your record</div><div class="v">${rec(me)}</div><div class="d muted">projected ${me.proj_wins} wins</div></div>
       <div class="tile"><div class="k">${hint("Playoff odds", HELP.playoffOdds)}</div><div class="v">${me.playoff_pct.toFixed(1)}%</div><div class="d muted">bye ${me.bye_pct.toFixed(1)}% · title ${me.title_pct.toFixed(1)}%</div></div>
       <div class="tile"><div class="k">${hint("Schedule ahead", HELP.sosLeft)}</div><div class="v">${me.sos_left == null ? "–" : (me.sos_left > 0 ? "+" : "") + me.sos_left.toFixed(1)}</div><div class="d muted">${me.sos_left == null ? "" : me.sos_left > 2 ? "harder than average" : me.sos_left < -2 ? "easier than average" : "about average"}</div></div>
-      <div class="tile"><div class="k">${hint("Projected draft slot", HELP.projSlot)}</div><div class="v">${me.avg_slot.toFixed(1)}</div><div class="d muted">${S.draft_season} rookie draft · <a href="#/draftprep">draft prep</a></div></div>
+      <div class="tile"><div class="k">${hint("Projected draft slot", HELP.projSlot)}</div><div class="v">${me.avg_slot.toFixed(1)}</div><div class="d muted">${S.draft_season} rookie draft · <a href="#/draftprep">upcoming draft</a></div></div>
     </div>` : ""}</div>
   <div class="grid g2">
     <div class="card"><h2>Playoff chances</h2>
@@ -1780,7 +1780,7 @@ async function viewDraftPrep() {
   const R = D.replay;
   setTimeout(() => drawDraftPrep(D), 0);
   const lean = h => ["QB", "RB", "WR", "TE"].filter(k => h.pos_bias[k] >= 0.15).map(k => posBadge(k)).join(" ") || '<span class="muted">balanced</span>';
-  return `<div class="card"><h1>${D.season} rookie draft prep</h1>
+  return `<div class="card"><h1>Upcoming draft <span class="muted">· ${D.season} rookie draft</span></h1>
     <p class="muted">${D.projected ? `Pick slots come from the <a href="#/season">season simulation</a>: non-playoff teams pick by ${ruleTxt(D.draft_rule)} (the rule this league used last year), then playoff teams, champion last.` : "Slots for this draft aren't projected yet."}
       ${D.snake ? "Snake draft." : "Linear draft: the same slot every round."} Pick values use the blended market value for an early, mid or late pick in that round.</p>
     <div class="tiles">
@@ -1891,6 +1891,45 @@ function drawPlayer(P) {
   onResize(drawLine, drawCurve);
 }
 
+// ---------------------------------------------------------------- navigation
+// Pages are grouped into sections by what you're doing. URLs are unchanged, so old links work.
+const ICONS = {
+  home: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+  league: '<circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/>',
+  trades: '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
+  players: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  draft: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
+};
+const SECTIONS = [
+  { id: "home", label: "Home", pages: [["#/", "Dashboard"]] },
+  { id: "league", label: "League", pages: [["#/rankings", "Rankings"], ["#/season", "Playoff odds"], ["#/team", "Teams"], ["#/records", "Record book"]] },
+  { id: "trades", label: "Trades", pages: [["#/partners", "Find trades"], ["#/trade", "Evaluate"], ["#/history", "Trade history"]] },
+  { id: "players", label: "Players", pages: [["#/players", "Rostered"], ["#/breakouts", "Breakouts"], ["#/pickups", "Free agents"], ["#/waivers", "Pickup history"]] },
+  { id: "draft", label: "Draft", pages: [["#/draftprep", "Upcoming draft"], ["#/drafts", "Past drafts"]] },
+];
+const lastPage = {};  // section id -> last page visited there, so a section tab returns you to it
+
+function sectionOf(h) {
+  for (const s of SECTIONS)
+    for (const [href] of s.pages)
+      if (h === href || (href !== "#/" && h.startsWith(href + "/"))) return [s, href];
+  if (h.startsWith("#/player/")) return [SECTIONS.find(s => s.id === "players"), null];
+  return [null, null];
+}
+
+function renderNav(h) {
+  const [sec, page] = sectionOf(h);
+  if (sec && page) lastPage[sec.id] = h;
+  $("#nav").innerHTML = SECTIONS.map(s => `<a href="${lastPage[s.id] || s.pages[0][0]}" class="${s === sec ? "active" : ""}"${s === sec ? ' aria-current="true"' : ""}>
+    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICONS[s.id]}</svg><span>${s.label}</span></a>`).join("");
+  const sub = $("#subnav");
+  sub.hidden = !sec || sec.pages.length < 2;
+  sub.innerHTML = sec ? sec.pages.map(([href, label]) => `<a href="${href}" class="${href === page ? "active" : ""}"${href === page ? ' aria-current="page"' : ""}>${label}</a>`).join("") : "";
+  const act = $("#subnav a.active");  // on phones the page tabs can scroll sideways; keep the current one in view
+  if (act && sub.scrollWidth > sub.clientWidth) sub.scrollLeft = act.offsetLeft - 40;
+  $("#gear").classList.toggle("active", h === "#/settings");
+}
+
 // ---------------------------------------------------------------- router
 const ROUTES = [
   [/^#?\/?$/, viewDashboard], [/^#\/partners$/, viewPartners], [/^#\/trade$/, viewTrade],
@@ -1902,9 +1941,7 @@ const ROUTES = [
 ];
 async function route() {
   const h = location.hash || "#/";
-  $$("#nav a").forEach(a => { const href = a.getAttribute("href"); a.classList.toggle("active", h === href || h.startsWith(href + "/")); });
-  const act = $("#nav a.active");  // on phones the nav scrolls sideways; keep the current page in view
-  if (act && act.parentElement.scrollWidth > act.parentElement.clientWidth) act.parentElement.scrollLeft = act.offsetLeft - 40;
+  renderNav(h);
   const view = $("#view");
   for (const [re, fn] of ROUTES) {
     const m = h.match(re);

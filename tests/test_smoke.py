@@ -25,10 +25,10 @@ pytestmark = pytest.mark.skipif(not os.environ.get("SMOKE"), reason="set SMOKE=1
 # Route -> text that only appears once that page has rendered.
 ROUTES = {
     "#/": "League landscape", "#/rankings": "Franchise rankings", "#/season": "Playoff odds",
-    "#/draftprep": "rookie draft prep", "#/partners": "Best trade partners", "#/trade": "Team A gives",
-    "#/team": "Manager profile", "#/players": "Rostered players", "#/pickups": "Waiver wire",
-    "#/breakouts": "Breakout watch", "#/drafts": "Draft performance", "#/waivers": "free-agent pickups",
-    "#/history": "Trade review", "#/records": "Record book", "#/settings": "Valuation",
+    "#/draftprep": "<h1>Upcoming draft", "#/partners": "<h1>Find trades", "#/trade": "Team A gives",
+    "#/team": "Manager profile", "#/players": "Rostered players", "#/pickups": "<h1>Free agents",
+    "#/breakouts": "Breakout watch", "#/drafts": "<h1>Past drafts", "#/waivers": "<h1>Pickup history",
+    "#/history": "<h1>Trade history", "#/records": "Record book", "#/settings": "Valuation",
 }
 API = ["overview", "players", "picks", "suggestions", "drafts", "rankings", "waivers", "pickups", "breakouts",
        "backtest", "season", "draft-prep", "trade-review", "records", "trades", "feed", "status", "team/1"]
@@ -100,3 +100,4 @@ def test_page(server, route):
     assert marker in dom, f"{route}: page didn't render (missing '{marker}')"
     assert "data-js-error" not in dom, f"{route}: JavaScript error"
     assert "Not found." not in dom
+    assert 'aria-current="true"' in dom or route == "#/settings", f"{route}: no section highlighted in the nav"

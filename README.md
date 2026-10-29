@@ -55,29 +55,58 @@ Run `git pull` (or download a fresh ZIP), then start the app again as usual. The
 - **A page shows an error after changing leagues:** check the league ID and username in Settings, then click Refresh.
 - **Starting over:** delete the `data/` folder to clear settings and cache.
 - **Tests:** `.venv\Scripts\python -m pytest` (macOS/Linux: `.venv/bin/python -m pytest`) runs the fast unit tests.
-- **Smoke test:** this starts the app on a *copy* of your `data/` folder and loads every page in headless Edge or Chrome. Each page has to render its content with no JavaScript errors, and every API endpoint has to respond. It takes about a minute with a warm cache. Run it with `$env:SMOKE=1; .\.venv\Scripts\python -m pytest tests	est_smoke.py` (macOS/Linux: `SMOKE=1 .venv/bin/python -m pytest tests/test_smoke.py`).
+- **Smoke test:** this starts the app on a *copy* of your `data/` folder and loads every page in headless Edge or Chrome. Each page has to render its content with no JavaScript errors, and every API endpoint has to respond. It takes about a minute with a warm cache. Run it with `$env:SMOKE=1; .\.venv\Scripts\python -m pytest tests\test_smoke.py` (macOS/Linux: `SMOKE=1 .venv/bin/python -m pytest tests/test_smoke.py`).
 
 ## Pages
+
+Pages are grouped into five sections along the top (a tab bar at the bottom on phones). Each section's pages are tabs underneath. Settings is the icon at the top right. Page addresses didn't change, so old bookmarks still work.
+
+**Home**
 
 | Page | What it's for |
 |---|---|
 | **Dashboard** | "Since your last visit": value moves and injury changes on your roster, trades and notable adds, newly available players and new breakout flags, with a *Mark all as seen* button. Also your window, ranks, sell candidates and positional outlook. Also a league table of every team's window, strength, picks, needs and tendency tags. |
+
+**League**
+
+| Page | What it's for |
+|---|---|
 | **Rankings** | Franchise score rankings (players + picks vs. league average), and a league map (win-now strength vs. franchise value, in four quadrants). Also franchise composition (top-10 players / depth / picks), roster value over time, a positional strength heatmap (now and long-term), and age structure. |
-| **Playoff Odds** | Playoff, bye, title and last-place odds for every team, from simulating the rest of the season with weekly projections. Also projected wins, strength of schedule ahead and so far, your remaining games with win chances, and each team's projected rookie-draft slot. |
-| **Draft Prep** | The next rookie draft: your picks with projected slots and values, pick capital by team, a heatmap of where every first-round pick will likely land, and how each manager drafts (position leanings, how often they take the best available). Once the rookie class has values after the NFL draft, it adds a big board and mock drafts of who's likely available at each of your picks. |
-| **Trade Partners** | Teams ranked by fit, with 3 suggested packages each. Each package shows market fairness, your team-context gain, their acceptance likelihood, and the reasons behind it. |
-| **Trade Evaluator** | Build any trade between two teams by clicking assets. Shows the market verdict, a per-source breakdown, and for each side: context value, lineup impact, age change, pick capital, roster cuts and acceptance. "Suggest trades with Team B" generates packages for one partner. |
+| **Playoff odds** | Playoff, bye, title and last-place odds for every team, from simulating the rest of the season with weekly projections. Also projected wins, strength of schedule ahead and so far, your remaining games with win chances, and each team's projected rookie-draft slot. |
 | **Teams** | Roster with values and notes, needs, and a manager profile with tendency bars and auto notes. Also your own notes on the manager, a window override, and their trade history. |
-| **Players** | Every rostered player with values from each source, win-now value and 30-day trend. You can add your own value override and notes here. |
-| **Waiver Wire** | Every available QB/RB/WR/TE on an NFL roster, scored for your team. Suggested adds (with why, who to drop, the gain and a FAAB bid), drop candidates, a map of upside vs. value to you, and a filterable, sortable table of everyone available with usage, depth chart and contract. |
+| **Record book** | All-time records: champions, all-time standings (titles, finals, record, points), highest and lowest scores, biggest blowouts and closest games, best seasons, best single-game and "franchise player" performances, biggest trade fleeces (today, at the time, and reversals), best and worst draft classes, draft steals and busts, and best pickups. Your entries are highlighted. |
+
+**Trades**
+
+| Page | What it's for |
+|---|---|
+| **Find trades** | Teams ranked by fit, with 3 suggested packages each. Each package shows market fairness, your team-context gain, their acceptance likelihood, and the reasons behind it. |
+| **Evaluate** | Build any trade between two teams by clicking assets. Shows the market verdict, a per-source breakdown, and for each side: context value, lineup impact, age change, pick capital, roster cuts and acceptance. "Suggest trades with Team B" generates packages for one partner. |
+| **Trade history** | Who won every trade. Each one shows the value gap on trade day, the peak gap since and the gap today, the value of each player then and now, the start points each side got, and a chart of each side's haul over time. Also a manager leaderboard (record, summed gaps then and now, points gained and given), a chart of won-at-the-time vs. won-in-hindsight, and filters by season and manager. |
+
+**Players**
+
+| Page | What it's for |
+|---|---|
+| **Rostered** | Every rostered player with values from each source, win-now value and 30-day trend. You can add your own value override and notes here. |
 | **Breakouts** | Players whose role is likely to grow before the market prices it in: free agents, trade targets on other rosters (with a "Trade for" button) or your own. Includes a breakout-vs-value map, the breakout board, the contract-year-backup watchlist (the Isaiah Likely pattern), depth-chart shake-ups for next season (who moves up if a starter leaves), and a backtest of how last season's flags did. |
-| **Trade Review** | Who won every trade. Each one shows the value gap on trade day, the peak gap since and the gap today, the value of each player then and now, the start points each side got, and a chart of each side's haul over time. Also a manager leaderboard (record, summed gaps then and now, points gained and given), a chart of won-at-the-time vs. won-in-hindsight, and filters by season and manager. |
-| **Drafts** | Draft performance for the startup and rookie drafts. A line chart of every team's draft-class value over time, with up to 4 teams highlighted, as total value or indexed to draft day = 100. Also a scorecard (draft-day value, value now, change, % still on roster and in the league, best and worst picks), the league's biggest risers and fallers, and roster construction (startup / rookie draft / trade / waivers). |
-| **Waivers** | Every waiver claim and free-agent add. Shows pickups per team, a line chart of the value of pickups on each roster over time, and a scorecard (pickups, FAAB spent, still rostered, hits, value at pickup, value captured, start points, best pickups). Also the league's top pickups by value captured and by start points. Season filter. |
-| **Waivers › team** | One team's pickup tiles and ranks, its pickup value vs. the league median, and every pickup with value at pickup, peak while held, value now, value captured, start points, a sparkline and the outcome. |
-| **Drafts › team** | One team's draft-class value vs. the league median, stat tiles, every pick with its draft-day value, current value, sparkline and status (on roster, traded, dropped), and its roster construction. |
-| **Record Book** | All-time records: champions, all-time standings (titles, finals, record, points), highest and lowest scores, biggest blowouts and closest games, best seasons, best single-game and "franchise player" performances, biggest trade fleeces (today, at the time, and reversals), best and worst draft classes, draft steals and busts, and best pickups. Your entries are highlighted. |
+| **Free agents** | Every available QB/RB/WR/TE on an NFL roster, scored for your team. Suggested adds (with why, who to drop, the gain and a FAAB bid), drop candidates, a map of upside vs. value to you, and a filterable, sortable table of everyone available with usage, depth chart and contract. |
+| **Pickup history** | Every waiver claim and free-agent add. Shows pickups per team, a line chart of the value of pickups on each roster over time, and a scorecard (pickups, FAAB spent, still rostered, hits, value at pickup, value captured, start points, best pickups). Also the league's top pickups by value captured and by start points. Season filter. |
+| **Pickup history › team** | One team's pickup tiles and ranks, its pickup value vs. the league median, and every pickup with value at pickup, peak while held, value now, value captured, start points, a sparkline and the outcome. |
 | **Player page** | Click any player's name. Shows his value history, notes and breakout score, a sell-timing verdict (sell now / within a year / hold / rising with age), and his projected value vs. peers and expected value over the next 3 years. It also charts the typical value change by age at his position. The Players table has an *Age outlook* column for scanning. |
+
+**Draft**
+
+| Page | What it's for |
+|---|---|
+| **Upcoming draft** | The next rookie draft: your picks with projected slots and values, pick capital by team, a heatmap of where every first-round pick will likely land, and how each manager drafts (position leanings, how often they take the best available). Once the rookie class has values after the NFL draft, it adds a big board and mock drafts of who's likely available at each of your picks. |
+| **Past drafts** | Draft performance for the startup and rookie drafts. A line chart of every team's draft-class value over time, with up to 4 teams highlighted, as total value or indexed to draft day = 100. Also a scorecard (draft-day value, value now, change, % still on roster and in the league, best and worst picks), the league's biggest risers and fallers, and roster construction (startup / rookie draft / trade / waivers). |
+| **Past drafts › team** | One team's draft-class value vs. the league median, stat tiles, every pick with its draft-day value, current value, sparkline and status (on roster, traded, dropped), and its roster construction. |
+
+**Settings**
+
+| Page | What it's for |
+|---|---|
 | **Settings** | Source weights, stud premium, pick multipliers per round, and a data refresh. |
 
 ## Restarted leagues (linked history)

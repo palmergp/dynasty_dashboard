@@ -40,13 +40,24 @@ h1 { font-size: 22px; margin: 0 0 4px; }
 h2 { font-size: 17px; margin: 0 0 10px; }
 h3 { font-size: 14px; margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 
-.topbar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px;
-  padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--border); }
+/* Header: sections (#nav) with the current section's pages below (#subnav). On phones the
+   sections move to a bottom tab bar. */
+.topbar { position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 1px solid var(--border); }
+.topbar .topline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 10px 20px; }
 .brand { font-weight: 700; }
-nav { display: flex; flex-wrap: wrap; gap: 4px; }
-nav a { padding: 5px 10px; border-radius: 6px; color: var(--text); }
-nav a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-nav a:hover { text-decoration: none; background: var(--accent-soft); }
+#nav { display: flex; gap: 4px; }
+#nav a { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; color: var(--text); font-weight: 500; }
+#nav a .ico { display: none; }
+#nav a.active, #gear.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+#nav a:hover, #gear:hover { text-decoration: none; background: var(--accent-soft); }
+#gear { margin-left: auto; display: inline-flex; padding: 6px; border-radius: 6px; color: var(--muted); }
+#subnav { display: flex; gap: 2px; padding: 0 20px; border-top: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+#subnav::-webkit-scrollbar { display: none; }
+#subnav[hidden] { display: none; }
+#subnav a { padding: 8px 12px; color: var(--muted); border-bottom: 2px solid transparent; white-space: nowrap; }
+#subnav a:hover { color: var(--text); text-decoration: none; }
+#subnav a.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.ico { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 main { max-width: 1400px; margin: 0 auto; padding: 18px 20px 60px; }
 
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
@@ -190,12 +201,17 @@ table.heat th.num { text-align: center; }
   main { padding: 12px 16px 40px; }
   .g2 { grid-template-columns: 1fr; }
   .sugg .sides, .tsides { grid-template-columns: 1fr !important; }
-  /* Header: one swipeable row of links instead of five wrapped rows. */
-  .topbar { padding: 8px 12px 6px; gap: 4px 12px; }
+  /* Sections become a bottom tab bar (thumb reach); the page tabs stay at the top. */
+  main { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+  .topbar .topline { padding: 8px 12px; flex-wrap: nowrap; }
   .brand { font-size: 13px; }
-  nav { flex-wrap: nowrap; overflow-x: auto; width: 100%; scrollbar-width: none; }
-  nav::-webkit-scrollbar { display: none; }
-  nav a { white-space: nowrap; }
+  #subnav { padding: 0 6px; }
+  #nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; gap: 0; background: var(--panel); border-top: 1px solid var(--border);
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); }
+  #nav a { flex: 1; flex-direction: column; gap: 2px; padding: 6px 0; font-size: 11px; }
+  #nav a .ico { display: block; }
+  #nav a.active { background: none; }
+  .toast { bottom: calc(76px + env(safe-area-inset-bottom)); }
   /* Wide tables scroll inside their card. */
   table { display: block; overflow-x: auto; }
   .scroll > table { display: table; }
