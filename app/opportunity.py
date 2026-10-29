@@ -182,10 +182,11 @@ def usage(weekly: dict) -> dict:
         pos = gl[-1][1]["pos"]
         tot, l3, prev = agg(gl), agg(gl[-3:]), agg(gl[:-3])
         out[pid] = {
-            "pos": pos, "team": gl[-1][1].get("team"), "games": tot["n"],
+            "pos": pos, "team": gl[-1][1].get("team"), "games": tot["n"], "last_week": gl[-1][0],
             "snap": tot["snap"], "share": tot["share"], "wo": tot["wo"], "pts": tot["pts"],
             "ppg": tot["pts"] / tot["n"], "wo_pg": tot["wo"] / tot["n"],
             "snap_l3": l3["snap"], "share_l3": l3["share"], "wo_l3": l3["wo"] / max(l3["n"], 1),
+            "ppg_l3": l3["pts"] / max(l3["n"], 1),
             "snap_prev": prev["snap"] if prev["n"] >= 2 else None,
             "share_prev": prev["share"] if prev["n"] >= 2 else None,
             "tgt": sum(s.get("rec_tgt", 0) for _, s in gl), "carries": sum(s.get("rush_att", 0) for _, s in gl),
@@ -394,6 +395,7 @@ def build(players: dict, use: dict, eff_use: dict, contracts_by_gsis: dict, seas
             "role": None if not u else {
                 "games": u["games"], "snap": round(u["snap"], 3), "snap_l3": round(u["snap_l3"], 3),
                 "share": round(u["share"], 3), "share_l3": round(u["share_l3"], 3), "ppg": round(u["ppg"], 1),
+                "ppg_l3": round(u["ppg_l3"], 1), "last_week": u["last_week"],
                 "tgt": u["tgt"], "carries": u["carries"], "rz": u["rz"],
                 "eff": round(ppwo[pid] / med[pos], 2) if pid in ppwo and med.get(pos) else None,
             },

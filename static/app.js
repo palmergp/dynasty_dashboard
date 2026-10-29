@@ -12,7 +12,7 @@ const WINDOW_LABEL = { contend: "Contender", middle: "Middle", rebuild: "Rebuild
 window.addEventListener("error", e => { document.body.dataset.jsError = e.message; });
 window.addEventListener("unhandledrejection", e => { document.body.dataset.jsError = String(e.reason && e.reason.message || e.reason); });
 
-const state = { ov: null, trade: { a: null, b: null, aGives: [], bGives: [] }, teamCache: {} };
+const state = { ov: null, trade: { a: null, b: null, aGives: [], bGives: [] }, teamCache: {}, cache: {} };
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -41,6 +41,7 @@ async function teamData(rid, force) {
 function invalidate() {
   state.ov = null; state.teamCache = {}; state.draftsData = null; state.waiversData = null; state.rankingsData = null;
   state.pickupsData = null; state.breakoutsData = null; state.reviewData = null; state.recordsData = null; state.backtestData = null; state.seasonData = null; state.draftPrepData = null;
+  state.cache = {};
 }
 
 // ---------------------------------------------------------------- help tooltips
@@ -205,6 +206,7 @@ async function viewDashboard() {
       <div class="grid g2" style="margin-top:10px">
         <div>
           <h3>${hint("Sell candidates", HELP.sell)} (aging or producing above their dynasty price)</h3>
+          <p class="small"><a href="#/deadline">Deadline sell list →</a> · <a href="#/future">Your rebuild timeline →</a></p>
           ${sells.length ? sells.map(a => assetLine(a, { notes: true })).join("") : `<p class="muted">None flagged.</p>`}
         </div>
         <div>
@@ -438,7 +440,12 @@ async function runEval() {
       </div>
       ${r.notes.length ? `<ul class="notes">${r.notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}
     </div>
-    <div class="grid g2">${side(A, r.b_gives)}${side(B, r.a_gives)}</div>`;
+    <div class="grid g2">${side(A, r.b_gives)}${side(B, r.a_gives)}</div>
+    ${tr.aGives.length && tr.bGives.length ? `<div class="card"><div class="row spread"><div><h2>Counter-offer</h2>
+      <p class="muted small">The smallest changes that make this work for both sides: ${esc(A.manager)} gains at least 3% in team-context value, and ${esc(B.manager)} would accept about 45%+ of the time.</p></div>
+      <button id="counter-btn" class="primary">Make it work for both sides</button></div><div id="counter-out"></div></div>` : ""}`;
+  const cb = $("#counter-btn");
+  if (cb) cb.onclick = runCounter;
 }
 
 // ---------------------------------------------------------------- team
@@ -1798,6 +1805,7 @@ async function viewDraftPrep() {
     <div class="card"><h2>Pick capital for this draft</h2><div id="dp-cap"></div>
       <p class="muted small">Total value of each team's picks in the ${D.season} draft, at their projected slots.</p></div>
   </div>
+  <div class="card" id="dp-timing"><h2>When to sell picks</h2><p class="muted small">Loading pick history… The first time, this downloads about 300 weekly snapshots and can take a minute.</p></div>
   ${firstRound.length ? `<div class="card"><h2>Projected first round</h2>
     <div class="row spread"><span class="scale">Chance ${[1, 2, 3, 4].map(b => `<i style="background:var(--age-${b})"></i>`).join("")} higher</span><span class="muted small">Each row is a team's own first-round pick; cells are the chance it lands in that slot.</span></div>
     <div class="scroll"><table class="heat" style="margin-top:8px"><thead><tr><th>Pick (owner)</th>${firstRound[0].slot_probs.map((_, i) => `<th class="num">${i + 1}</th>`).join("")}<th class="num">Avg</th></tr></thead>
@@ -1824,12 +1832,12 @@ async function viewDraftPrep() {
 }
 function drawDraftPrep(D) {
   const host = $("#dp-cap");
-  if (!host || !D.capital.length) return;
   const rows = D.capital.map(c => ({ label: c.manager, parts: { v: c.value }, tip: { v: `${c.n} pick(s), ${c.firsts} first(s) · ${fmt(c.value)} value` } }));
-  const draw = () => stackedBars(host, { rows, keys: ["v"], labels: { v: "Pick value" }, max: Math.max(...D.capital.map(c => c.value)),
+  const draw = () => host && D.capital.length && stackedBars(host, { rows, keys: ["v"], labels: { v: "Pick value" }, max: Math.max(...D.capital.map(c => c.value)),
     text: v => compact(v), title: "Pick capital" });
   draw();
   onResize(draw);
+  loadPickTiming([draw]);
 }
 
 // ---------------------------------------------------------------- player page
@@ -1891,6 +1899,228 @@ function drawPlayer(P) {
   onResize(drawLine, drawCurve);
 }
 
+// ---------------------------------------------------------------- deadline, buy low, timeline, league prices
+const cachedApi = (key, url) => (state.cache[key] ||= api(url).catch(e => { delete state.cache[key]; throw e; }));
+const shortDate = d => { const x = new Date(d + "T00:00"); return `${MONTHS[x.getMonth()]} ${x.getDate()}`; };
+Object.assign(HELP, {
+  sellScore: "Buyer premium plus half the value he's expected to lose over the next year, in value points. Higher = more reason to sell now.",
+  premium: "How much more the buyer's team values him than yours does (team context: their window, needs and trade tendencies).",
+  ask: "The best package of theirs that works for both sides: you gain at least 3% in team-context value and they'd accept about 45%+ of the time.",
+  dropPct: "Today's DynastyProcess value vs. his highest value in the last 4 months.",
+  roleShare: "Share of his team's opportunities at his position (targets and carries; pass attempts and runs for QBs) over his last 3 games vs. the season.",
+  strength: "Projected value of each team's best starting lineup that year, if nobody trades. Players age along the age curves; picks become rookies after their draft.",
+  priceIndex: "How much more (or less) market value managers got back when they traded this kind of asset away, at trade-day values. Positive = this league pays above market for it.",
+  pickIndex: "A pick's value that month compared with its own average over its last 11 months before the draft, averaged over past draft classes. Values are what the pick would buy in players.",
+});
+
+async function viewDeadline() {
+  const D = await cachedApi("deadline", "/api/deadline");
+  const dl = D.deadline;
+  const when = !dl.week ? "Your league has no trade deadline set."
+    : dl.weeks_left == null ? `Trade deadline: week ${dl.week}.`
+    : dl.weeks_left < 0 ? `The week ${dl.week} trade deadline has passed, so this list is for the offseason market.`
+    : `Trade deadline: week ${dl.week}${dl.dates ? ` (${shortDate(dl.dates[0])}–${shortDate(dl.dates[1])})` : ""}, ${dl.weeks_left === 0 ? "this week" : `${dl.weeks_left} week${dl.weeks_left === 1 ? "" : "s"} away`}.`;
+  const ask = (r, b) => {
+    const x = (b.asks || [])[0];
+    if (!x) return '<span class="muted small">No package found that works for both sides.</span>';
+    const deal = { b: b.roster_id, aGives: [{ kind: "player", id: r.id }], bGives: x.get.map(g => ({ kind: g.kind, id: g.id })) };
+    return `${x.get.map(g => `${g.kind === "player" ? posBadge(g.pos) + " " : ""}${esc(g.name)} <span class="muted small">${fmt(g.value)}</span>`).join("<br>")}
+      <div class="small muted">you ${pct(x.gain_pct, 0)} · they accept ~${x.acceptance}%</div>
+      <button class="small" onclick='openInEvaluator(${JSON.stringify(deal)})'>Open in evaluator</button>`;
+  };
+  return `<div class="card"><h1>Deadline sell list</h1>
+    <p class="muted">${when} Contenders pay the most for win-now help before the deadline. After it, these players are worth what the offseason market says, a year older.
+      Buyers are teams with a ${D.buyer_odds}%+ chance to make the playoffs. Ranked by ${hint("sell score", HELP.sellScore)}.</p>
+    <div class="tiles">
+      <div class="tile"><div class="k">Weeks to the deadline</div><div class="v">${dl.weeks_left == null ? "–" : Math.max(0, dl.weeks_left)}</div><div class="d muted">${dl.week ? `week ${dl.week}` : "no deadline"}</div></div>
+      <div class="tile"><div class="k">Buyers</div><div class="v">${D.buyers.length}</div><div class="d muted">teams ${D.buyer_odds}%+ to make the playoffs</div></div>
+      <div class="tile"><div class="k">Players worth selling</div><div class="v">${D.players.length}</div><div class="d muted">${D.players.length ? esc(D.players[0].name) + " first" : "none right now"}</div></div>
+    </div>
+    ${D.buyers.length ? `<h3>Buyers</h3><div class="row">${D.buyers.map(b => `<span class="badge tag">${esc(b.manager)} · ${b.playoff_pct.toFixed(0)}%${b.needs.length ? " · needs " + b.needs.join(", ") : ""}</span>`).join(" ")}</div>` : ""}
+  </div>
+  ${D.players.map(r => `<div class="card">
+    <div class="row spread"><div><h2>${posBadge(r.pos)} ${playerLink(r.id, r.name)} ${verdictBadge(r.verdict ? { verdict: r.verdict } : null)}</h2>
+      <div class="muted small">${r.age ? r.age + "y · " : ""}${esc(r.nfl_team || "")}${r.injury ? ` · <span class="delta-neg">${esc(r.injury)}</span>` : ""}</div></div>
+      <div class="row">
+        <div class="stat"><div class="k">Value</div><div class="v">${fmt(r.value)}</div></div>
+        <div class="stat"><div class="k">Win-now</div><div class="v">${fmt(r.redraft)}</div></div>
+        <div class="stat"><div class="k">${hint("Expected in a year", HELP.likelyValue)}</div><div class="v">${fmt(r.expected_next_year)}</div></div>
+        <div class="stat"><div class="k">${hint("Sell score", HELP.sellScore)}</div><div class="v">${fmt(r.score)}</div></div>
+      </div></div>
+    <ul class="notes">${r.reasons.map(x => `<li>${esc(x)}</li>`).join("")}</ul>
+    <div class="scroll"><table data-nosort><thead><tr><th>Buyer</th><th class="num">Playoff odds</th><th class="num">${hint("Values him at", HELP.premium)}</th><th>${hint("What to ask for", HELP.ask)}</th></tr></thead>
+      <tbody>${r.buyers.filter(b => b.asks).map(b => `<tr><td><a href="#/team/${b.roster_id}">${esc(b.manager)}</a>${b.need >= 0.5 ? ` <span class="badge tag">needs ${r.pos}</span>` : ""}</td>
+        <td class="num">${b.playoff_pct.toFixed(0)}%</td>
+        <td class="num">${fmt(b.their_value)} <span class="small ${signCls(b.premium)}">${b.premium > 0 ? "+" : ""}${fmt(b.premium)}</span></td>
+        <td>${b.asks ? ask(r, b) : '<span class="muted small">–</span>'}</td></tr>`).join("")}</tbody></table></div>
+  </div>`).join("") || `<div class="card"><p class="muted">Nobody on your roster is worth more to a likely playoff team than to you, and nobody is aging out fast. Nothing to sell for deadline reasons.</p></div>`}`;
+}
+
+async function viewBuyLow() {
+  const B = await cachedApi("buylow", "/api/buylow");
+  const others = B.players.filter(r => r.owner_rid != null && !r.mine), mine = B.players.filter(r => r.mine), fa = B.players.filter(r => r.owner_rid == null);
+  const kind = { injury: ["Injury dip", "acc-Possible"], slump: ["Slump", "res-even"], dip: ["Price dip", "res-even"] };
+  const table = (rows, action) => `<div class="scroll"><table><thead><tr><th>Player</th><th class="num">Value</th><th class="num">${hint("Drop", HELP.dropPct)}</th>
+      <th class="num">${hint("Role", HELP.roleShare)}</th><th>4 months</th><th>Why</th><th></th></tr></thead>
+    <tbody>${rows.map(r => `<tr><td><b>${posBadge(r.pos)} ${playerLink(r.id, r.name)}</b><div class="muted small">${r.age ? r.age + "y · " : ""}${esc(r.nfl_team || "")}${r.owner ? " · " + esc(r.owner) : ""}</div>
+        <span class="badge ${kind[r.kind][1]}">${kind[r.kind][0]}</span></td>
+      <td class="num">${fmt(r.value)}</td>
+      <td class="num" data-sort="${r.drop_pct}"><b class="delta-neg">−${r.drop_pct.toFixed(0)}%</b><div class="muted small">${fmt(r.high)} → ${fmt(r.now_dp)}</div></td>
+      <td class="num" data-sort="${r.share_l3}">${Math.round(r.share_l3 * 100)}%<div class="muted small">season ${Math.round(r.share * 100)}%</div></td>
+      <td>${sparkline(r.spark)}</td>
+      <td class="small"><ul class="notes" style="margin:0">${r.reasons.slice(1).map(x => `<li>${esc(x)}</li>`).join("")}</ul></td>
+      <td>${action(r)}</td></tr>`).join("") || `<tr><td colspan="7" class="muted">None right now.</td></tr>`}</tbody></table></div>`;
+  return `<div class="card"><h1>Buy low</h1>
+    <p class="muted">Players whose market value has dropped at least ${B.min_drop_pct}% from their high in the last 4 months while their role hasn't: a few quiet games, a minor injury or a crowded headline.
+      Those are the cheapest times to buy, and the worst times to sell your own. Injury dips are labeled; judge how serious the injury is. Players whose age says "sell" are left out. Values as of ${esc(B.as_of || "–")}.</p>
+    <div class="tiles">
+      <div class="tile"><div class="k">On other teams</div><div class="v">${others.length}</div><div class="d muted">trade targets</div></div>
+      <div class="tile"><div class="k">On your roster</div><div class="v">${mine.length}</div><div class="d muted">don't sell these low</div></div>
+      <div class="tile"><div class="k">Free agents</div><div class="v">${fa.length}</div><div class="d muted">see Free agents</div></div>
+    </div></div>
+  <div class="card"><h2>Trade targets</h2>${table(others, r => `<button onclick='openInEvaluator(${JSON.stringify({ b: r.owner_rid, aGives: [], bGives: [{ kind: "player", id: r.id }] })})'>Trade for</button>`)}</div>
+  ${mine.length ? `<div class="card"><h2>Yours: hold, don't sell low</h2>${table(mine, () => "")}</div>` : ""}
+  ${fa.length ? `<div class="card"><h2>Free agents</h2>${table(fa, () => `<a href="#/pickups">Free agents →</a>`)}</div>` : ""}`;
+}
+
+async function viewFuture() {
+  const F = await cachedApi("future", "/api/future");
+  const me = F.teams.find(t => t.is_me), S = F.me;
+  setTimeout(() => drawFuture(F), 0);
+  const n = F.years.length, y2 = Math.min(2, n - 1);
+  let headline = "";
+  if (S) {
+    let closest = 1;
+    for (let i = 1; i < n; i++) if (S.gap[i] > S.gap[closest]) closest = i;
+    headline = S.first_playoff_year === "Now" ? "Your lineup is already above the playoff line."
+      : S.first_playoff_year ? `If nothing changes, you reach the playoff line in <b>${esc(S.first_playoff_year)}</b>.`
+      : `If nothing changes, you don't reach the playoff line within ${n - 1} years. Closest: <b>${esc(F.years[closest])}</b>, ${fmt(-S.gap[closest])} of lineup value short.`;
+  }
+  return `<div class="card"><h1>Rebuild timeline</h1>
+    <p class="muted">Every team's projected ${hint("lineup strength", HELP.strength)} over the next ${n - 1} years if nobody trades. Players follow the age curves (expected value, including falling out of the league).
+      Draft picks become rookies after their draft. The playoff line is the ${F.playoff_teams}th-best team that year. Dynasty values price in the future, so treat ranks as a guide to who will be good when, not as exact standings.</p>
+    ${S ? `<p>${headline}</p><div class="tiles">${F.years.map((y, i) => `<div class="tile ${me.rank[i] <= F.playoff_teams ? "mine" : ""}"><div class="k">${esc(y)}</div><div class="v">#${me.rank[i]}</div>
+      <div class="d muted">${S.gap[i] >= 0 ? `${fmt(S.gap[i])} above` : `${fmt(-S.gap[i])} below`} the playoff line</div></div>`).join("")}</div>` : ""}
+  </div>
+  <div class="card"><h2>Lineup strength by year</h2><div id="fu-legend"></div><div id="fu-line"></div><p class="muted small">Highlighted: you, the playoff line, and the teams projected on top in ${esc(F.years[y2])}.</p></div>
+  <div class="card"><h2>All teams</h2><div class="scroll"><table>
+    <thead><tr><th>Team</th>${F.years.map(y => `<th class="num">${esc(y)}</th>`).join("")}<th class="num">Franchise value ${esc(F.years[y2])}</th></tr></thead>
+    <tbody>${F.teams.map(t => `<tr class="${t.is_me ? "me" : ""}"><td><b>${esc(t.manager)}</b> ${windowBadge(t.window)}</td>
+      ${t.strength.map((v, i) => `<td class="num" data-sort="${-t.rank[i]}"><b>#${t.rank[i]}</b> <span class="muted small">${compact(v)}</span></td>`).join("")}
+      <td class="num">${compact(t.franchise[y2])}</td></tr>`).join("")}</tbody></table></div></div>
+  ${me ? `<div class="grid g2">
+    <div class="card"><h2>Your core in ${esc(F.years[y2])}</h2><table data-nosort><thead><tr><th>Player</th>${F.years.map(y => `<th class="num">${esc(y)}</th>`).join("")}</tr></thead>
+      <tbody>${me.core.map(c => `<tr><td>${posBadge(c.pos)} ${playerLink(c.id, c.name)} <span class="muted small">${c.age ?? ""}</span></td>${c.path.map(v => `<td class="num">${fmt(v)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+    <div class="card"><h2>Your picks</h2><table data-nosort><thead><tr><th>Pick</th>${F.years.map(y => `<th class="num">${esc(y)}</th>`).join("")}</tr></thead>
+      <tbody>${me.picks.map(p => `<tr><td>${esc(p.name)}</td>${p.path.map(v => `<td class="num">${fmt(v)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${n + 1}" class="muted">No picks.</td></tr>`}</tbody></table>
+      <p class="muted small">A pick keeps its value until its draft, then ages like a typical rookie.</p></div>
+  </div>` : ""}`;
+}
+function drawFuture(F) {
+  const host = $("#fu-line");
+  if (!host) return;
+  const today = new Date();
+  const dates = F.years.map((_, i) => new Date(today.getFullYear() + i, today.getMonth(), today.getDate()).toISOString().slice(0, 10));
+  const y2 = Math.min(2, F.years.length - 1);
+  const top = [...F.teams].sort((a, b) => a.rank[y2] - b.rank[y2]).filter(t => !t.is_me).slice(0, 2).map(t => t.roster_id);
+  let k = 1;
+  const series = F.teams.map(t => {
+    const hl = t.is_me || top.includes(t.roster_id);
+    return { id: t.roster_id, label: t.manager + (t.is_me ? " (you)" : ""), values: t.strength, highlight: hl, color: hl ? `var(--series-${t.is_me ? 1 : ++k})` : undefined };
+  });
+  series.push({ id: "line", label: "Playoff line", values: F.playoff_line, highlight: true, color: "var(--series-4)" });
+  $("#fu-legend").innerHTML = legendHTML([...series.filter(s => s.highlight).map(s => ({ label: s.label, color: s.color })), { label: "Other teams", color: "var(--context-line)" }]);
+  const markers = dates.map((d, i) => ({ date: d, label: F.years[i] }));
+  const draw = () => lineChart(host, { dates, series, markers, hideMonths: true, format: compact, height: 300, title: "Projected lineup strength" });
+  draw();
+  onResize(draw);
+}
+
+async function viewPrices() {
+  const M = await cachedApi("prices", "/api/league-prices");
+  setTimeout(() => drawPrices(M), 0);
+  const VERD = { over: ["Pays above market", "Sell these here; they're pricey to buy."], under: ["Pays below market", "Buy these here; selling them gets less."], market: ["About market", ""] };
+  return `<div class="card"><h1>League prices</h1>
+    <p class="muted">How this league has priced assets in its ${M.trades} completed trades${M.since ? ` since ${esc(M.since)}` : ""}, compared with the market on each trade day.
+      A ${hint("price index", HELP.priceIndex)} of +15% for 1sts means managers who traded a 1st away got 15% more market value back than they gave: this league pays extra for 1sts.
+      Small samples are pulled toward 0%, so with few trades most kinds read close to market. ${M.pick_history ? "Picks are valued with DynastyProcess's pick rankings from the week of the trade." : "Pick history was unavailable, so picks use today's values."}</p></div>
+  ${M.groups.map((g, gi) => `<div class="card"><h2>By ${g.title.toLowerCase()}</h2><div id="pr-chart-${gi}"></div>
+    <div class="scroll"><table data-nosort><thead><tr><th>Kind</th><th class="num">${hint("Price index", HELP.priceIndex)}</th><th class="num">Trades</th><th>Reading</th><th>Biggest examples</th></tr></thead>
+      <tbody>${g.rows.map(r => `<tr><td><b>${esc(r.label)}</b></td><td class="num">${pct(r.pct, 0)}</td><td class="num">${r.n}</td>
+        <td>${VERD[r.verdict][0]}${VERD[r.verdict][1] ? `<div class="muted small">${VERD[r.verdict][1]}</div>` : ""}${r.n < 4 ? '<div class="muted small">Too few trades to say.</div>' : ""}</td>
+        <td class="small">${r.examples.length ? `<details><summary>${r.examples.length} trade${r.examples.length === 1 ? "" : "s"}</summary>${r.examples.map(x => `<div style="margin:4px 0"><b>${esc(x.date)}</b> ${esc(x.manager)} sent ${esc(x.sent)}<br>for ${esc(x.recv)} <span class="${signCls(x.pct)}">(${pct(x.pct, 0)})</span></div>`).join("")}</details>` : ""}</td></tr>`).join("")}</tbody></table></div>
+  </div>`).join("")}`;
+}
+const PRICE_SHORT = { QB: "QB", RB: "RB", WR: "WR", TE: "TE", R1: "1st", R2: "2nd", R3: "3rd+", young: "≤24", prime: "25–27", vet: "28+" };
+function drawPrices(M) {
+  const draws = M.groups.map((g, gi) => () => {
+    const host = $(`#pr-chart-${gi}`);
+    if (!host) return;
+    divergingColumns(host, { height: 200, xLabel: g.title, title: `League price index by ${g.title.toLowerCase()}`,
+      items: g.rows.map(r => ({ label: PRICE_SHORT[r.key], value: r.pct,
+        tip: [{ color: r.pct >= 0 ? "var(--div-s2)" : "var(--div-n2)", value: pct(r.pct, 0), label: `${r.label} · ${r.n} trades` }] })) });
+  });
+  draws.forEach(f => f());
+  onResize(...draws);
+}
+
+// "When to sell picks" card on the Upcoming draft page.
+async function loadPickTiming(draws) {
+  const host = $("#dp-timing");
+  if (!host) return;
+  let T;
+  try { T = await cachedApi("picktiming", "/api/pick-timing"); }
+  catch (e) { host.innerHTML = `<h2>When to sell picks</h2><div class="warnbox">Couldn't load pick history: ${esc(e.message)}</div>`; return; }
+  if (!$("#dp-timing")) return;
+  const tracks = T.tracks.filter(t => t.months.some(m => m.index));
+  if (!tracks.length) { host.innerHTML = `<h2>When to sell picks</h2><p class="muted">Not enough pick history yet.</p>`; return; }
+  const sel = Math.min(state.pickTrack ?? 0, tracks.length - 1);
+  const t = tracks[sel], o = t.outlook;
+  host.innerHTML = `<div class="row spread"><h2>When to sell picks</h2>
+      <select id="dp-track" aria-label="Pick">${tracks.map((x, i) => `<option value="${i}" ${i === sel ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select></div>
+    <p class="muted small">Typical value of next year's picks by month, vs. each draft class's own average (${t.classes.join(", ")} classes; DynastyProcess pick rankings since ${esc(T.since || "")}, turned into what the pick would buy in players).
+      ${hint("How it's measured", HELP.pickIndex)}</p>
+    <div id="dp-timing-chart"></div>
+    ${o ? `<p>For ${/^e/i.test(t.label) ? "an" : "a"} ${esc(t.label.toLowerCase())}, the typical high point from here is <b>${o.best}</b> (${pct(o.best_pct, 0)} vs. ${o.now}).
+      ${o.worst === o.now ? `${o.now} is already the typical low point, so selling now means selling near the bottom.` : `The low point ahead is ${o.worst} (${pct(o.worst_pct, 0)}).`}${o.draft_pct != null ? ` Holding to April: ${pct(o.draft_pct, 0)}.` : ""}</p>` : ""}
+    <table data-nosort><thead><tr><th>Pick</th><th class="num">Typical best month</th><th class="num">${T.month} → best month</th><th class="num">${T.month} → April</th></tr></thead>
+      <tbody>${tracks.map(x => x.outlook ? `<tr><td>${esc(x.label)}</td><td class="num">${x.outlook.best}</td><td class="num">${pct(x.outlook.best_pct, 0)}</td>
+        <td class="num">${x.outlook.draft_pct == null ? "–" : pct(x.outlook.draft_pct, 0)}</td></tr>` : "").join("")}</tbody></table>
+    <p class="muted small">February is missing: DynastyProcess's pick rankings are off-scale for a few weeks most Februaries, so those snapshots are skipped.</p>`;
+  $("#dp-track").onchange = e => { state.pickTrack = +e.target.value; loadPickTiming(draws); };
+  const draw = () => {
+    const ch = $("#dp-timing-chart");
+    if (!ch) return;
+    divergingColumns(ch, { height: 200, xLabel: "Month", title: `${t.label} value by month`,
+      items: t.months.map(m => ({ label: m.label, value: m.index ? (m.index - 1) * 100 : 0, highlight: m.label === T.month,
+        tip: [{ color: (m.index || 1) >= 1 ? "var(--div-s2)" : "var(--div-n2)", value: m.index ? pct((m.index - 1) * 100, 0) : "no data", label: `vs. average · ${m.n} classes` }] })) });
+  };
+  draw();
+  onResize(...draws, draw);
+}
+
+// Counter-offer section under the evaluator.
+async function runCounter() {
+  const tr = state.trade, out = $("#counter-out");
+  if (!out) return;
+  out.innerHTML = `<p class="muted">Looking for changes…</p>`;
+  let r;
+  try { r = await api("/api/counter", { method: "POST", body: { a_rid: tr.a, a_gives: tr.aGives, b_rid: tr.b, b_gives: tr.bGives } }); }
+  catch (e) { out.innerHTML = `<div class="warnbox">${esc(e.message)}</div>`; return; }
+  if (r.status === "works") { out.innerHTML = `<p>This deal already works for both sides: ${pct(r.current.gain_pct, 0)} in team-context value for Team A, and Team B would accept about ${r.current.acceptance}% of the time.</p>`; return; }
+  out.innerHTML = `${r.why.length ? `<ul class="notes">${r.why.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+    ${r.options.length ? `<table data-nosort><thead><tr><th>Change</th><th class="num">Team A gain</th><th class="num">Team B accepts</th><th></th></tr></thead><tbody>
+      ${r.options.map((o, i) => `<tr><td><b>${esc(o.label)}</b><div class="muted small">${esc(o.a_gives.map(a => a.name).join(", "))} for ${esc(o.b_gives.map(a => a.name).join(", "))}</div></td>
+        <td class="num ${signCls(o.gain_pct)}">${pct(o.gain_pct, 0)}</td><td class="num">~${o.acceptance}%</td><td><button data-opt="${i}">Use this</button></td></tr>`).join("")}</tbody></table>`
+      : `<p class="muted">No small change makes this work for both sides. Try a different centerpiece, or use "Suggest trades with Team B".</p>`}`;
+  $$("#counter-out button[data-opt]").forEach(b => b.onclick = () => {
+    const o = r.options[+b.dataset.opt];
+    tr.aGives = o.a_gives.map(a => ({ kind: a.kind, id: a.id }));
+    tr.bGives = o.b_gives.map(a => ({ kind: a.kind, id: a.id }));
+    route();
+  });
+}
+
 // ---------------------------------------------------------------- navigation
 // Pages are grouped into sections by what you're doing. URLs are unchanged, so old links work.
 const ICONS = {
@@ -1902,9 +2132,9 @@ const ICONS = {
 };
 const SECTIONS = [
   { id: "home", label: "Home", pages: [["#/", "Dashboard"]] },
-  { id: "league", label: "League", pages: [["#/rankings", "Rankings"], ["#/season", "Playoff odds"], ["#/team", "Teams"], ["#/records", "Record book"]] },
-  { id: "trades", label: "Trades", pages: [["#/partners", "Find trades"], ["#/trade", "Evaluate"], ["#/history", "Trade history"]] },
-  { id: "players", label: "Players", pages: [["#/players", "Rostered"], ["#/breakouts", "Breakouts"], ["#/pickups", "Free agents"], ["#/waivers", "Pickup history"]] },
+  { id: "league", label: "League", pages: [["#/rankings", "Rankings"], ["#/season", "Playoff odds"], ["#/future", "Timeline"], ["#/team", "Teams"], ["#/records", "Record book"]] },
+  { id: "trades", label: "Trades", pages: [["#/partners", "Find trades"], ["#/trade", "Evaluate"], ["#/deadline", "Deadline"], ["#/prices", "League prices"], ["#/history", "Trade history"]] },
+  { id: "players", label: "Players", pages: [["#/players", "Rostered"], ["#/breakouts", "Breakouts"], ["#/buylow", "Buy low"], ["#/pickups", "Free agents"], ["#/waivers", "Pickup history"]] },
   { id: "draft", label: "Draft", pages: [["#/draftprep", "Upcoming draft"], ["#/drafts", "Past drafts"]] },
 ];
 const lastPage = {};  // section id -> last page visited there, so a section tab returns you to it
@@ -1937,6 +2167,7 @@ const ROUTES = [
   [/^#\/drafts$/, viewDrafts], [/^#\/drafts\/(\d+)$/, viewDraftTeam],
   [/^#\/waivers$/, viewWaivers], [/^#\/waivers\/(\d+)$/, viewWaiverTeam],
   [/^#\/rankings$/, viewRankings], [/^#\/records$/, viewRecords], [/^#\/season$/, viewSeason], [/^#\/player\/(\w+)$/, viewPlayer], [/^#\/draftprep$/, viewDraftPrep], [/^#\/pickups$/, viewPickups], [/^#\/breakouts$/, viewBreakouts],
+  [/^#\/deadline$/, viewDeadline], [/^#\/buylow$/, viewBuyLow], [/^#\/future$/, viewFuture], [/^#\/prices$/, viewPrices],
   [/^#\/settings$/, viewSettings],
 ];
 async function route() {

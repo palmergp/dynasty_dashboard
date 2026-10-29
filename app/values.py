@@ -121,21 +121,32 @@ def _dp_ids() -> list[dict]:
         _http.get(f"{DP_BASE}/db_playerids.csv").text))))
 
 
-def _fetch_dynastyprocess(superflex: bool) -> dict:
-    ids = _dp_ids()
-    fp_to_sleeper = {r["fantasypros_id"]: r["sleeper_id"] for r in ids if r.get("fantasypros_id") not in (None, "", "NA")}
-    col_v, col_e = ("value_2qb", "ecr_2qb") if superflex else ("value_1qb", "ecr_1qb")
-    players = list(csv.DictReader(io.StringIO(_http.get(f"{DP_BASE}/values-players.csv").text)))
-    picks = list(csv.DictReader(io.StringIO(_http.get(f"{DP_BASE}/values-picks.csv").text)))
-
-    # DP publishes pick ECR but not pick values; fit ln(value) ~ ecr on players and apply to picks.
+def ecr_curve(players: list[dict], col_v: str, col_e: str) -> tuple[float, float]:
+    """(a, b) with DP value ~ exp(a + b * ecr), fit on players. DP publishes pick rankings
+    (ECR, a rank among players) but not pick values, so picks are valued with this."""
     pts = [(float(r[col_e]), math.log(float(r[col_v]))) for r in players
            if r[col_e] not in ("", "NA") and r[col_v] not in ("", "NA") and float(r[col_v]) > 0 and float(r[col_e]) < 300]
     n = len(pts)
     mx = sum(x for x, _ in pts) / n
     my = sum(y for _, y in pts) / n
     b = sum((x - mx) * (y - my) for x, y in pts) / sum((x - mx) ** 2 for x, _ in pts)
-    a = my - b * mx
+    return my - b * mx, b
+
+
+def dp_ecr_curve(superflex: bool) -> tuple[float, float]:
+    """Today's ECR -> DP value curve (cached with the other source data)."""
+    col_v, col_e = ("value_2qb", "ecr_2qb") if superflex else ("value_1qb", "ecr_1qb")
+    return tuple(cached(f"dp:ecrcurve:{col_v}", VALUES_TTL, lambda: list(ecr_curve(
+        list(csv.DictReader(io.StringIO(_http.get(f"{DP_BASE}/values-players.csv").text))), col_v, col_e))))
+
+
+def _fetch_dynastyprocess(superflex: bool) -> dict:
+    ids = _dp_ids()
+    fp_to_sleeper = {r["fantasypros_id"]: r["sleeper_id"] for r in ids if r.get("fantasypros_id") not in (None, "", "NA")}
+    col_v, col_e = ("value_2qb", "ecr_2qb") if superflex else ("value_1qb", "ecr_1qb")
+    players = list(csv.DictReader(io.StringIO(_http.get(f"{DP_BASE}/values-players.csv").text)))
+    picks = list(csv.DictReader(io.StringIO(_http.get(f"{DP_BASE}/values-picks.csv").text)))
+    a, b = ecr_curve(players, col_v, col_e)
 
     out = {"players": [], "picks": []}
     for r in players:

@@ -10,7 +10,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, draftprep, drafts, feed, opportunity, pickups, rankings, records, retro, season, store, suggest, trade, waivers
+from . import (buylow, config, counter, deadline, draftprep, drafts, feed, future, market, opportunity, pickhistory, pickups, rankings,
+               records, retro, season, store, suggest, trade, waivers)
 from .config import ROOT
 from .league import League
 from .values import SOURCE_LABELS
@@ -191,6 +192,20 @@ def evaluate(body: TradeIn):
     return _clean(res)
 
 
+@app.post("/api/counter")
+def counter_offer(body: TradeIn):
+    """Smallest changes that make a proposed trade work for both sides (from team A's side)."""
+    lg = league()
+    if body.a_rid not in lg.teams or body.b_rid not in lg.teams or body.a_rid == body.b_rid:
+        raise HTTPException(400, "Pick two different teams")
+    find = lambda refs, rid: [a for r in refs for a in [lg.asset(r.kind, r.id)] if a and a["roster_id"] == rid]
+    res = counter.fix(lg, body.a_rid, find(body.a_gives, body.a_rid), body.b_rid, find(body.b_gives, body.b_rid))
+    slim = lambda xs: [{"kind": a["kind"], "id": a["id"], "name": a["name"]} for a in xs]
+    for o in res["options"]:
+        o["a_gives"], o["b_gives"] = slim(o["a_gives"]), slim(o["b_gives"])
+    return _clean(res)
+
+
 @app.get("/api/suggestions")
 def suggestions(partner: int | None = None, limit: int = 4):
     lg = league()
@@ -292,6 +307,38 @@ def season_report():
 def draft_prep():
     lg = league()
     return _memo("draftprep", lg, lambda: _clean(draftprep.analyze(lg, _season(lg))))
+
+
+@app.get("/api/deadline")
+def deadline_report():
+    lg = league()
+    if not lg.me:
+        raise HTTPException(400, "Your username wasn't found in the league; check Settings.")
+    return _memo("deadline", lg, lambda: _clean(deadline.analyze(lg, _season(lg))))
+
+
+@app.get("/api/buylow")
+def buylow_report():
+    lg = league()
+    return _memo("buylow", lg, lambda: _clean(buylow.analyze(lg)))
+
+
+@app.get("/api/future")
+def future_report():
+    lg = league()
+    return _memo("future", lg, lambda: _clean(future.analyze(lg)))
+
+
+@app.get("/api/pick-timing")
+def pick_timing():
+    lg = league()
+    return _memo("picktiming", lg, lambda: _clean(pickhistory.seasonality(lg)))
+
+
+@app.get("/api/league-prices")
+def league_prices():
+    lg = league()
+    return _memo("prices", lg, lambda: _clean(market.analyze(lg)))
 
 
 @app.get("/api/status")

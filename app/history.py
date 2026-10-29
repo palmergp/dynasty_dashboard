@@ -23,11 +23,11 @@ PATH = "files/values-players.csv"
 _http = httpx.Client(timeout=45, headers={"User-Agent": "dynasty-trade-helper/1.0"}, follow_redirects=True)
 
 
-def _commits(since: str) -> list[dict]:
-    """[{sha, date}] for the values file since an ISO date, oldest first (one per day)."""
+def _commits(since: str, path: str = PATH) -> list[dict]:
+    """[{sha, date}] for a DP data file since an ISO date, oldest first (one per day)."""
     def fetch():
         out, url = [], f"https://api.github.com/repos/{REPO}/commits"
-        params = {"path": PATH, "since": f"{since}T00:00:00Z", "per_page": 100}
+        params = {"path": path, "since": f"{since}T00:00:00Z", "per_page": 100}
         while url:
             r = _http.get(url, params=params)
             r.raise_for_status()
@@ -35,7 +35,8 @@ def _commits(since: str) -> list[dict]:
             url = r.links.get("next", {}).get("url")
             params = None
         return out
-    commits = cached(f"dp:commits:{since}", 24 * 3600, fetch)
+    key = f"dp:commits:{since}" if path == PATH else f"dp:commits:{path}:{since}"
+    commits = cached(key, 24 * 3600, fetch)
     by_date = {}
     for c in commits:
         by_date.setdefault(c["date"], c)  # API lists newest first: keep the day's last commit

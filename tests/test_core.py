@@ -239,3 +239,27 @@ def test_age_note_matches_sell_verdict():
     assert old["verdict"] in ("sell", "soon") and old["verdict"] != "hold"
     assert ("sell now" if old["verdict"] == "sell" else "sell within a year") in aging.note(old, "RB", 28.5)
     assert "typical" not in aging.outlook(curve, "RB", 25.4, 1100)["path"][0]  # no drift given
+
+
+def test_pick_history_drops_off_scale_snapshots():
+    from app.pickhistory import _glitches
+    row = [140, 139, 142, 141, 140, 72, 73, 74, 138, 140, 141, 139, None, 142]
+    assert _glitches(row) == [5, 6, 7]  # the February-style jump to half the usual rank
+    assert _glitches([50, 51, 49, 48, 47, 46, 45]) == []  # a steady climb is real
+
+
+def test_league_price_kinds():
+    from app.market import _kinds
+    assert _kinds({"kind": "pick", "round": 1}) == ["R1"]
+    assert _kinds({"kind": "pick", "round": 4}) == ["R3"]
+    assert _kinds({"kind": "player", "pos": "RB", "age": 23.0}) == ["RB", "young"]
+    assert _kinds({"kind": "player", "pos": "WR", "age": 29.0}) == ["WR", "vet"]
+
+
+def test_timeline_lineup_fits_rookies_in_flex():
+    from types import SimpleNamespace
+    from app.future import _lineup
+    lg = SimpleNamespace(slots=["QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX"])
+    # A rookie (unknown position) can't play QB or TE, but can fill RB/WR/flex spots.
+    total = _lineup(lg, [("QB", 5000), ("ROOKIE", 4000), ("TE", 1000), ("ROOKIE", 3000), ("WR", 2000), ("QB", 500)])
+    assert total == 5000 + 4000 + 1000 + 3000 + 2000 + 500

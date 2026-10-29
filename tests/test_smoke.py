@@ -1,4 +1,4 @@
-"""End-to-end smoke test: start the app on a copy of your data, load every page in a
+r"""End-to-end smoke test: start the app on a copy of your data, load every page in a
 headless browser (Edge or Chrome), and check each one rendered without errors.
 
 Skipped unless SMOKE=1, because it needs your data/ folder (or network access) and a
@@ -29,9 +29,11 @@ ROUTES = {
     "#/team": "Manager profile", "#/players": "Rostered players", "#/pickups": "<h1>Free agents",
     "#/breakouts": "Breakout watch", "#/drafts": "<h1>Past drafts", "#/waivers": "<h1>Pickup history",
     "#/history": "<h1>Trade history", "#/records": "Record book", "#/settings": "Valuation",
+    "#/deadline": "<h1>Deadline sell list", "#/buylow": "<h1>Buy low", "#/future": "<h1>Rebuild timeline", "#/prices": "<h1>League prices",
 }
 API = ["overview", "players", "picks", "suggestions", "drafts", "rankings", "waivers", "pickups", "breakouts",
-       "backtest", "season", "draft-prep", "trade-review", "records", "trades", "feed", "status", "team/1"]
+       "backtest", "season", "draft-prep", "trade-review", "records", "trades", "feed", "status", "team/1",
+       "deadline", "buylow", "future", "pick-timing", "league-prices"]
 
 
 def _browser() -> str | None:

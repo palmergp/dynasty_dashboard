@@ -74,11 +74,11 @@ function lineChart(host, opts) {
     tx.textContent = format(tv); svg.append(tx);
   }
   if (yLabel) { const yl = svgEl("text", { x: m.l, y: m.t - 3, "font-size": 11, fill: "var(--chart-muted)" }); yl.textContent = yLabel; svg.append(yl); }
-  // Month ticks: ~6 evenly spaced first-of-month labels.
+  // Month ticks: ~6 evenly spaced first-of-month labels (off when markers label the points).
   const months = [];
   for (let d = new Date(t0); d <= new Date(t1); d.setMonth(d.getMonth() + 1)) months.push(new Date(d.getFullYear(), d.getMonth(), 1));
   const every = Math.max(1, Math.ceil(months.length / Math.max(2, Math.floor(iw / 90))));
-  months.filter((_, i) => i % every === 0).forEach(d => {
+  months.filter((_, i) => !opts.hideMonths && i % every === 0).forEach(d => {
     const t = d.getTime(); if (t < t0) return;
     const lab = svgEl("text", { x: x(t), y: H - 8, "text-anchor": "middle", "font-size": 11, fill: "var(--chart-muted)" });
     lab.textContent = `${MONTHS[d.getMonth()]} '${String(d.getFullYear()).slice(2)}`; svg.append(lab);
