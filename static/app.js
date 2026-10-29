@@ -1839,6 +1839,8 @@ const VERDICT = {
 };
 Object.assign(HELP, {
   ageOutlook: "How a player's value typically changes over the next year at his age, compared with other players at his position and value level. From about four years of weekly value history. Negative = his age is working against him.",
+  vsPeers: "His value over time if only his age mattered: compared with other players at his position and value level. This is what the sell verdict uses.",
+  likelyValue: "His expected actual value: the age effect plus the average change for players at his position and value level over that many years (new rookie classes push everyone down, and many lower-value players fade out entirely).",
   ageCurve: "Typical one-year change in value at each age, compared with players at the same position and value level. Bars below zero are ages where value usually falls faster than for peers. His current age is outlined.",
 });
 const verdictBadge = o => o ? `<span class="badge ${VERDICT[o.verdict][1]}" ${tipAttr(HELP.ageOutlook)}>${VERDICT[o.verdict][0]}</span>` : "";
@@ -1864,10 +1866,12 @@ async function viewPlayer(pid) {
       <p class="muted small">Weekly DynastyProcess values on the app's scale, so they can differ a little from the blended value above.</p></div>
     <div class="card"><h2>Sell timing</h2>
       ${o ? `<p><b>${VERDICT[o.verdict][0]}.</b> ${esc(o.why)}</p>
-        <table data-nosort><thead><tr><th>In</th><th class="num">Age</th><th class="num">Value vs. peers</th><th class="num">Change</th></tr></thead>
-        <tbody><tr><td>Now</td><td class="num">${a.age}</td><td class="num">${fmt(a.value)}</td><td></td></tr>
-          ${o.path.map(p => `<tr><td>${p.years} year${p.years > 1 ? "s" : ""}</td><td class="num">${p.age}</td><td class="num">${fmt(p.value)}</td><td class="num ${signCls(p.change_pct)}">${p.change_pct > 0 ? "+" : ""}${p.change_pct.toFixed(0)}%</td></tr>`).join("")}</tbody></table>
-        <p class="muted small">"Value vs. peers" applies the typical age effect only. It assumes he performs like a typical player his age, so injuries, role changes and breakouts aren't included.</p>` : '<p class="muted">Not enough age data for this player.</p>'}
+        <table data-nosort><thead><tr><th>In</th><th class="num">Age</th><th class="num">${hint("Vs. peers", HELP.vsPeers)}</th><th class="num">${hint("Expected value", HELP.likelyValue)}</th></tr></thead>
+        <tbody><tr><td>Now</td><td class="num">${a.age}</td><td class="num">${fmt(a.value)}</td><td class="num">${fmt(a.value)}</td></tr>
+          ${o.path.map(p => `<tr><td>${p.years} year${p.years > 1 ? "s" : ""}</td><td class="num">${p.age}</td>
+            <td class="num">${fmt(p.value)} <span class="small ${signCls(p.change_pct)}">${pct(p.change_pct, 0)}</span></td>
+            <td class="num">${p.typical != null ? `${fmt(p.typical)} <span class="small ${signCls(p.typical_pct)}">${pct(p.typical_pct, 0)}</span>` : "–"}</td></tr>`).join("")}</tbody></table>
+        <p class="muted small">"Vs. peers" is the age effect alone: how he does against other ${a.pos}s at his value. The verdict is based on this. "Expected value" also includes the average drop for ${a.pos}s at his value as new rookie classes arrive, so it's usually lower even for a Hold. Both assume he performs like a typical player his age, so injuries, role changes and breakouts aren't included.</p>` : '<p class="muted">Not enough age data for this player.</p>'}
       <h3>${hint(`Typical ${a.pos} value change by age`, HELP.ageCurve)}</h3><div id="pl-curve"></div>
     </div>
   </div>`;

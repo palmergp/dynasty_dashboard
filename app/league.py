@@ -5,7 +5,7 @@ import datetime as dt
 import statistics
 from collections import defaultdict
 
-from . import opportunity, sleeper, store, tendencies
+from . import aging, opportunity, sleeper, store, tendencies
 from .values import ValueBook
 
 POSITIONS = ("QB", "RB", "WR", "TE")
@@ -107,6 +107,12 @@ class League:
         except Exception as e:  # usage and contract feeds are extras; the rest still works
             self.opportunity = {"season": self.season, "role_season": self.season, "weeks": 0, "players": {}}
             self.opportunity_error = f"{type(e).__name__}: {e}"
+        try:
+            self.aging = aging.build(self)
+            self.aging_error = None
+        except Exception as e:  # value history is an extra too
+            self.aging = {"curve": {}, "drift": {}, "hist": {"dates": [], "values": {}}}
+            self.aging_error = f"{type(e).__name__}: {e}"
         for t in self.teams.values():
             for a in t["players"]:
                 self.annotate(a)
@@ -144,6 +150,7 @@ class League:
         a["breakout"] = o["breakout"] if o else 0
         a["opp_score"] = o["opp_score"] if o else None
         a["opp"] = o
+        a["age_outlook"] = aging.outlook(self.aging["curve"], a["pos"], a["age"], a["value"], drift=self.aging["drift"])
         return a
 
     def pick_asset(self, season: int, rnd: int, orig: int, owner: int, tier: str | None) -> dict:
@@ -289,10 +296,15 @@ class League:
 
 
 def is_sell_candidate(a: dict) -> bool:
-    """Older players or those whose current production outruns their dynasty price."""
+    """Players whose age curve says sell (or, without one, near the age cliff), or whose
+    current production outruns their dynasty price."""
     if a["kind"] != "player" or a["value"] < 1000:
         return False
-    old = a["age"] is not None and a["age"] >= SELL_AGE.get(a["pos"], 30) - 0.5
+    o = a.get("age_outlook")
+    if o:
+        old = o["verdict"] in ("sell", "soon")
+    else:
+        old = a["age"] is not None and a["age"] >= SELL_AGE.get(a["pos"], 30) - 0.5
     win_now_heavy = a["redraft"] > a["value"] * 1.25
     return old or win_now_heavy
 
@@ -300,13 +312,11 @@ def is_sell_candidate(a: dict) -> bool:
 def player_notes(a: dict, lg: "League") -> list[str]:
     notes = []
     age, pos, v = a["age"], a["pos"], a["value"]
-    if age is not None and pos in SELL_AGE:
-        if age >= SELL_AGE[pos]:
-            notes.append(f"Age {age:g} {pos}: at or past the usual {pos} age cliff ({SELL_AGE[pos]}); value tends to drop quickly.")
-        elif age >= SELL_AGE[pos] - 1:
-            notes.append(f"Age {age:g} {pos}: approaching the {pos} age cliff; the sell window is now.")
-        elif age <= 23.5 and v >= 3000:
-            notes.append(f"Young ({age:g}) and already valuable; a cornerstone for a rebuild.")
+    age_note = aging.note(a.get("age_outlook"), pos, age)
+    if age_note:
+        notes.append(age_note)
+    elif age is not None and age <= 23.5 and v >= 3000:
+        notes.append(f"Young ({age:g}) and already valuable; a cornerstone for a rebuild.")
     if v >= 1500 and len(a["sources"]) >= 2:
         hi = max(a["sources"], key=a["sources"].get)
         lo = min(a["sources"], key=a["sources"].get)

@@ -8,6 +8,12 @@ for being valuable tend to drift back. So each change is divided by the median c
 players at the same position and value level, which leaves the part that's about age. The
 median of that by position and age (rounded down) is the curve; thin ages borrow from
 their neighbors. Players who fell off the rankings count at the floor value.
+
+For an expected value, the age effect is multiplied by the average raw change of players
+at the same position and value level over 1, 2 and 3 years (every position loses value to
+new rookie classes, so even a "hold" usually means a lower number later). That uses the
+average, not the median: lower-value players split between fading to nothing and holding
+on, and the median of that is whichever group happens to be bigger.
 """
 from __future__ import annotations
 
@@ -20,6 +26,12 @@ from . import history
 MIN_VALUE = 800
 MIN_N = 12
 STEP = 4  # weeks between sampled starting points
+HORIZONS = (1, 2, 3)  # years of raw change kept for the expected value
+MAX_GAIN = 3.0         # cap on one player's ratio so a few breakouts don't set the average
+
+
+def _band(v: float) -> int:
+    return 0 if v < 2000 else 1 if v < 4000 else 2
 
 
 def _age_on(birth: str | None, day: str) -> float | None:
@@ -31,34 +43,46 @@ def _age_on(birth: str | None, day: str) -> float | None:
         return None
 
 
+def _later(ds: list, days: int) -> list:
+    """Index of the snapshot ~`days` after each snapshot (None if there isn't one)."""
+    out, k = [], 0
+    for d in ds:
+        target = d + dt.timedelta(days=days)
+        while k < len(ds) and ds[k] < target:
+            k += 1
+        out.append(k if k < len(ds) and (ds[k] - target).days <= 21 else None)
+    return out
+
+
 def build(lg, years: int = 4) -> dict:
-    """{"curve": {pos: {age: {"ratio", "n"}}}, "hist": value history used}."""
+    """{"curve": {pos: {age: {"ratio", "n"}}}, "drift": {pos: {band: [average 1y, 2y, 3y ratio]}},
+    "hist": value history used}."""
     hist = history.value_history(lg, dt.date(lg.season - years, 12, 1))
     dates, hv = hist["dates"], hist["values"]
     ds = [dt.date.fromisoformat(d) for d in dates]
-    later = []  # index of the snapshot ~1 year after each snapshot
-    k = 0
-    for i, d in enumerate(ds):
-        target = d + dt.timedelta(days=365)
-        while k < len(ds) and ds[k] < target:
-            k += 1
-        later.append(k if k < len(ds) and (ds[k] - target).days <= 21 else None)
+    later = {y: _later(ds, 365 * y) for y in HORIZONS}
     samples = []  # (pos, age, band, ratio)
-    band = lambda v: 0 if v < 2000 else 1 if v < 4000 else 2
+    raw = defaultdict(list)  # (pos, band, years) -> ratios
     for pid, series in hv.items():
         p = lg.players_db.get(pid) or {}
         pos, birth = p.get("position"), p.get("birth_date")
         if pos not in ("QB", "RB", "WR", "TE") or not birth:
             continue
         for i in range(0, len(dates), STEP):
-            j = later[i]
             v0 = series[i]
-            if j is None or v0 is None or v0 < MIN_VALUE:
+            if v0 is None or v0 < MIN_VALUE:
+                continue
+            for y in HORIZONS:
+                j = later[y][i]
+                if j is not None:
+                    raw[(pos, _band(v0), y)].append(min(MAX_GAIN, (series[j] or 0.0) / v0))
+            j = later[1][i]
+            if j is None:
                 continue
             v1 = series[j] if series[j] is not None else 0.0
             age = _age_on(birth, dates[i])
             if age is not None:
-                samples.append((pos, int(age), band(v0), v1 / v0))
+                samples.append((pos, int(age), _band(v0), v1 / v0))
     drift = defaultdict(list)
     for pos, _, b, r in samples:
         drift[(pos, b)].append(r)
@@ -85,7 +109,11 @@ def build(lg, years: int = 4) -> dict:
             near = [(rows[b]["ratio"], max(rows[b]["n"], 1) ** 0.5 * (2 if b == a else 1)) for b in (a - 1, a, a + 1) if b in rows]
             smooth[a] = {"ratio": round(max(0.5, min(1.4, sum(x * w for x, w in near) / sum(w for _, w in near))), 3), "n": r["n"]}
         curve[pos] = smooth
-    return {"curve": curve, "hist": hist}
+    by_pos = defaultdict(dict)
+    for (pos, b) in drift:
+        steps = [statistics.mean(raw[(pos, b, y)]) for y in HORIZONS if len(raw[(pos, b, y)]) >= MIN_N]
+        by_pos[pos][b] = [round(r, 3) for r in steps]
+    return {"curve": curve, "drift": dict(by_pos), "hist": hist}
 
 
 def ratio(curve: dict, pos: str, age: float | None) -> float | None:
@@ -97,19 +125,26 @@ def ratio(curve: dict, pos: str, age: float | None) -> float | None:
     return rows.get(a, {}).get("ratio")
 
 
-def outlook(curve: dict, pos: str, age: float | None, value: float, years: int = 3) -> dict | None:
+def outlook(curve: dict, pos: str, age: float | None, value: float, years: int = 3, drift: dict | None = None) -> dict | None:
     """Value vs. similar players over the next few years from the age curve, and a sell-timing
     verdict. A path of -30% means: worth 30% less, relative to players at his position and
-    value level, than he is today."""
+    value level, than he is today. With `drift`, each step also has an expected raw value
+    ("typical", "typical_pct"): the age effect plus the average change of players at that
+    position and value level."""
     if age is None or pos not in curve:
         return None
     path, v = [], value
+    d = ((drift or {}).get(pos) or {}).get(_band(value)) or []
     for y in range(1, years + 1):
         r = ratio(curve, pos, age + y - 1)
         if r is None:
             return None
         v *= r
-        path.append({"years": y, "age": round(age + y, 1), "value": round(v), "change_pct": round((v / (value or 1) - 1) * 100, 1)})
+        step = {"years": y, "age": round(age + y, 1), "value": round(v), "change_pct": round((v / (value or 1) - 1) * 100, 1)}
+        if y <= len(d):
+            raw = v * d[y - 1]
+            step.update(typical=round(raw), typical_pct=round((raw / (value or 1) - 1) * 100, 1))
+        path.append(step)
     y1 = path[0]["change_pct"]
     y2 = path[1]["change_pct"] if len(path) > 1 else y1
     peer = f"other {pos}s at his value"
@@ -121,4 +156,18 @@ def outlook(curve: dict, pos: str, age: float | None, value: float, years: int =
         verdict, why = "rising", f"At his age, a {pos} typically gains about {y1:.0f}% over the next year compared with {peer}."
     else:
         verdict, why = "hold", f"At his age, a {pos} typically keeps roughly even with {peer} over the next year ({y1:+.0f}%)."
-    return {"path": path, "verdict": verdict, "why": why, "y1_pct": y1}
+        if y2 <= -8:
+            why += f" After that he typically falls behind them ({y2:+.0f}% over two years)."
+    return {"path": path, "verdict": verdict, "why": why, "y1_pct": y1, "y2_pct": y2}
+
+
+LABELS = {"sell": "sell now", "soon": "sell within a year", "hold": "hold for now"}
+
+
+def note(o: dict | None, pos: str, age: float | None) -> str | None:
+    """Player-description line for the sell-timing verdict, or None when age isn't a concern."""
+    if not o or age is None:
+        return None
+    if o["verdict"] in ("sell", "soon") or (o["verdict"] == "hold" and o["y2_pct"] <= -8):
+        return f"Age {age:g} {pos}, {LABELS[o['verdict']]}: {o['why']}"
+    return None

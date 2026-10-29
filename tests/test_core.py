@@ -223,3 +223,19 @@ def test_acceptance_calibration():
     assert 40 <= fair <= 55
     assert 12 <= acceptance(-0.26, {}, 1, 1)[0] <= 30
     assert acceptance(0.15, {}, 1, 1)[0] >= 60
+
+
+def test_age_note_matches_sell_verdict():
+    from app import aging
+    curve = {"RB": {a: {"ratio": r, "n": 50} for a, r in {22: 1.07, 23: 1.09, 24: 1.07, 25: 0.99, 26: 0.92, 27: 0.91, 28: 0.9, 29: 0.9, 30: 0.9}.items()}}
+    drift = {"RB": {0: [0.8, 0.55, 0.36]}}
+    o = aging.outlook(curve, "RB", 25.4, 1100, drift=drift)
+    assert o["verdict"] == "hold" and o["y2_pct"] <= -8
+    assert "hold for now" in aging.note(o, "RB", 25.4)  # never "sell window is now" next to a Hold
+    assert o["path"][0]["typical"] < o["path"][0]["value"]  # expected value includes the league-wide drop
+    young = aging.outlook(curve, "RB", 22.5, 1100, drift=drift)
+    assert young["verdict"] == "rising" and aging.note(young, "RB", 22.5) is None
+    old = aging.outlook(curve, "RB", 28.5, 1100, drift=drift)
+    assert old["verdict"] in ("sell", "soon") and old["verdict"] != "hold"
+    assert ("sell now" if old["verdict"] == "sell" else "sell within a year") in aging.note(old, "RB", 28.5)
+    assert "typical" not in aging.outlook(curve, "RB", 25.4, 1100)["path"][0]  # no drift given
