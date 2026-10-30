@@ -22,6 +22,7 @@ MIN_HIGH = 800
 MIN_ROLE = 0.35        # opportunity model's role level (1 = a full starter's share)
 KEEP_SHARE = 0.85      # recent share vs. season share
 MAX_AGE = 33
+DEEP = 0.25            # past this, a bigger drop hasn't meant a bigger rebound (checks.buy_low)
 HURT = {"IR", "Out", "Doubtful", "PUP", "NFI", "Sus"}
 
 
@@ -70,7 +71,7 @@ def analyze(lg) -> dict:
         if a.get("breakout", 0) >= 35:
             reasons.append(f"Breakout score {a['breakout']}.")
         weight = min(1.5, (a["value"] / 2000) ** 0.5)
-        score = drop * (0.5 + min(1.0, o["role_level"])) * weight * (1.15 if verdict == "rising" else 1.0) * (0.8 if injured else 1.0)
+        score = min(drop, DEEP) * (0.5 + min(1.0, o["role_level"])) * weight * (1.15 if verdict == "rising" else 1.0) * (0.8 if injured else 1.0)
         rows.append({**{k: a.get(k) for k in ("id", "name", "pos", "nfl_team", "age", "value", "injury", "breakout", "years_exp")},
                      "kind": "injury" if injured else "slump" if slump else "dip",
                      "high": round(high), "high_date": dates[jh], "now_dp": round(now), "drop_pct": round(drop * 100, 1),

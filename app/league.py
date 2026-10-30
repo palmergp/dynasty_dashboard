@@ -5,7 +5,7 @@ import datetime as dt
 import statistics
 from collections import defaultdict
 
-from . import aging, opportunity, sleeper, store, tendencies
+from . import aging, calcfit, opportunity, sleeper, store, tendencies
 from .values import ValueBook
 
 POSITIONS = ("QB", "RB", "WR", "TE")
@@ -122,6 +122,16 @@ class League:
         self.trades = sleeper.all_trades(lid, force)
         self.used_picks = sleeper.used_picks(lid, force)
         self.tendencies = tendencies.build(self)
+        try:
+            self.calcfit = calcfit.analyze(self)
+            self.calcfit_error = None
+        except Exception as e:  # KTC history is an extra; acceptance falls back to the blend
+            self.calcfit = {"managers": [], "trades": 0, "sides": 0, "sources": list(calcfit.SOURCES)}
+            self.calcfit_error = f"{type(e).__name__}: {e}"
+        for m in self.calcfit["managers"]:
+            if m["lean"] and m["user_id"] in self.tendencies:
+                self.tendencies[m["user_id"]]["calc"] = {"source": m["lean"], "strength": m["strength"],
+                                                         "n": m["n"], "diff_pct": m["diff_pct"]}
         self._windows(pre_picks=False)
         for t in self.teams.values():
             self._team_summary(t)

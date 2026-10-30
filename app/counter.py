@@ -16,7 +16,7 @@ from __future__ import annotations
 from itertools import combinations
 
 from .tendencies import package_value
-from .trade import acceptance, context_value, perceived_gain, roster_cost_fn
+from .trade import acceptance, context_value, market_view, perceived_gain, roster_cost_fn
 
 GOAL_GAIN = 0.03
 GOAL_ACC = 45
@@ -32,10 +32,10 @@ class _Scorer:
         self._v = {}
 
     def vals(self, a):
-        """(market, value to me, value to them) for an asset."""
+        """(market, value to me, value to them, market as they see it) for an asset."""
         k = a["id"]
         if k not in self._v:
-            self._v[k] = (a["value"], context_value(a, self.me), context_value(a, self.them, self.tend))
+            self._v[k] = (a["value"], context_value(a, self.me), context_value(a, self.them, self.tend), market_view(a, self.tend))
         return self._v[k]
 
     def score(self, give: list, get: list) -> dict:
@@ -49,7 +49,8 @@ class _Scorer:
         cut_me = self.my_cut(n_get, {a["id"] for a in give})
         cut_them = self.their_cut(n_give, {a["id"] for a in get})
         gain = (get_me - give_me - cut_me) / (max(get_me, give_me) or 1)
-        acc, _ = acceptance(perceived_gain(give_them, get_them, mkt_give, mkt_get, cut_them), self.tend, len(give), len(get))
+        view_give, view_get = package_value([x[3] for x in g], p), package_value([x[3] for x in r], p)
+        acc, _ = acceptance(perceived_gain(give_them, get_them, view_give, view_get, cut_them), self.tend, len(give), len(get))
         return {"gain_pct": gain, "gain": get_me - give_me - cut_me, "acc": acc, "mkt_give": mkt_give, "mkt_get": mkt_get}
 
     @staticmethod

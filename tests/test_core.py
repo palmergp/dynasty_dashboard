@@ -263,3 +263,57 @@ def test_timeline_lineup_fits_rookies_in_flex():
     # A rookie (unknown position) can't play QB or TE, but can fill RB/WR/flex spots.
     total = _lineup(lg, [("QB", 5000), ("ROOKIE", 4000), ("TE", 1000), ("ROOKIE", 3000), ("WR", 2000), ("QB", 500)])
     assert total == 5000 + 4000 + 1000 + 3000 + 2000 + 500
+
+
+def test_timeline_picks_play_only_after_their_draft():
+    from types import SimpleNamespace
+    from app.future import lineup_entries
+    lg = SimpleNamespace(season=2026)
+    pick = {"kind": "pick", "season": 2028, "value": 3000}
+    player = {"kind": "player", "pos": "WR", "value": 2000}
+    path = lambda a: [a["value"]] * 4
+    assert lineup_entries(lg, [player, pick], 1, path) == [("WR", 2000)]  # 2027: not drafted yet
+    assert lineup_entries(lg, [player, pick], 2, path) == [("WR", 2000), ("ROOKIE", 3000)]
+
+
+def test_calculator_lean_needs_enough_consistent_trades():
+    from app.calcfit import MIN_TRADES, _at, _verdict
+    assert _verdict([0.2, 0.25, 0.18, 0.22])["lean"] == "ktc"        # consistently better on KTC
+    assert _verdict([-0.2, -0.25, -0.18, -0.22])["lean"] == "dynastyprocess"
+    assert _verdict([0.3, 0.3])["lean"] is None                      # too few trades
+    assert _verdict([0.3, -0.3, 0.25, -0.2])["lean"] is None         # no consistent direction
+    assert MIN_TRADES >= 3
+    series = [["2025-01-01", 100], ["2025-02-01", 200]]
+    assert _at(series, "2025-01-15") == 100
+    assert _at(series, "2024-12-01") == 100   # before his history starts: first value
+    assert _at(series, "2025-03-01") == 200
+
+
+def test_market_view_leans_toward_their_calculator():
+    from app.trade import market_view
+    a = {"value": 1000, "market": 1000, "sources": {"ktc": 1400, "dynastyprocess": 800}}
+    assert market_view(a) == 1000
+    assert market_view(a, {"calc": {"source": "ktc", "strength": 0.5}}) == 1200
+    assert market_view(a, {"calc": {"source": "dynastyprocess", "strength": 0.5}}) == 900
+    assert market_view({**a, "sources": {}}, {"calc": {"source": "ktc", "strength": 0.5}}) == 1000
+
+
+def test_roster_room_taxi_and_cuts():
+    from types import SimpleNamespace
+    from app.roster import _plan
+    p = lambda i, v, exp=3, **kw: {"kind": "player", "id": str(i), "name": f"P{i}", "pos": "WR", "value": v, "redraft": v,
+                                   "years_exp": exp, "taxi": False, "ir": False, **kw}
+    players = [p(i, 1000 + 100 * i) for i in range(5)] + [p(10, 300, exp=2, taxi=True), p(11, 400, exp=0, taxi=True)]
+    picks = [{"id": "2027-1-1", "name": "2027 1st", "season": 2027, "value": 2500}, {"id": "2027-2-1", "name": "2027 2nd", "season": 2027, "value": 900}]
+    lg = SimpleNamespace(season=2026, me=None)
+    plan = _plan(lg, {"roster_id": 1, "manager": "x", "players": players, "picks": picks},
+                 {"limit": 6, "taxi_slots": 2, "taxi_years": 3, "allow_vets": False})
+    assert [a["name"] for a in plan["promoted"]] == ["P10"]          # third-year player ages off taxi
+    assert [a["name"] for a in plan["to_taxi"]] == ["Rookie from 2027 2nd"]  # lowest rookie takes the open spot
+    assert plan["active"] == 5 + 1 + 1 and plan["over"] == 1
+    assert [c["name"] for c in plan["cuts"]] == ["P10"]              # lowest value next year goes first
+
+
+def test_recap_ordinals():
+    from app.recap import _ordinal
+    assert [_ordinal(n) for n in (1, 2, 3, 4, 11, 12, 13, 21, 22, 101)] == ["1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "101st"]

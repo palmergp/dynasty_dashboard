@@ -30,10 +30,14 @@ ROUTES = {
     "#/breakouts": "Breakout watch", "#/drafts": "<h1>Past drafts", "#/waivers": "<h1>Pickup history",
     "#/history": "<h1>Trade history", "#/records": "Record book", "#/settings": "Valuation",
     "#/deadline": "<h1>Deadline sell list", "#/buylow": "<h1>Buy low", "#/future": "<h1>Rebuild timeline", "#/prices": "<h1>League prices",
+    "#/recap": "<h1>Weekly recap", "#/roster": "<h1>Roster room",
 }
+# Cards that load after the page renders: route -> text that appears once they've loaded.
+LATE = {"#/future": "Rank after", "#/prices": "Avg. result on KTC", "#/deadline": "Vs. similar players", "#/buylow": "Vs. similar players"}
 API = ["overview", "players", "picks", "suggestions", "drafts", "rankings", "waivers", "pickups", "breakouts",
        "backtest", "season", "draft-prep", "trade-review", "records", "trades", "feed", "status", "team/1",
-       "deadline", "buylow", "future", "pick-timing", "league-prices", "phone"]
+       "deadline", "buylow", "future", "pick-timing", "league-prices", "phone",
+       "target", "calculators", "checks", "recap", "roster-room"]
 
 
 def _browser() -> str | None:
@@ -82,6 +86,22 @@ def test_api(server, path):
         json.loads(r.read())
 
 
+@pytest.mark.parametrize("path", ["evaluate", "trade-impact", "pitch", "counter"])
+def test_trade_posts(server, path):
+    with urllib.request.urlopen(f"{server}/api/players", timeout=600) as r:
+        players = [p for p in json.loads(r.read()) if p.get("roster_id")]
+    a = players[0]
+    b = next(p for p in players if p["roster_id"] != a["roster_id"])
+    body = {"a_rid": a["roster_id"], "a_gives": [{"kind": "player", "id": a["id"]}],
+            "b_rid": b["roster_id"], "b_gives": [{"kind": "player", "id": b["id"]}]}
+    req = urllib.request.Request(f"{server}/api/{path}", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=600) as r:
+        assert r.status == 200
+        out = json.loads(r.read())
+    if path == "pitch":
+        assert out["text"].startswith("Hey ")
+
+
 def _dom(browser, url):
     out = subprocess.run([browser, "--headless=new", "--disable-gpu", "--virtual-time-budget=20000", "--dump-dom", url],
                          capture_output=True, text=True, encoding="utf-8", timeout=180)
@@ -100,6 +120,8 @@ def test_page(server, route):
         marker = ROUTES[route]
     dom = _dom(browser, f"{server}/{route}")
     assert marker in dom, f"{route}: page didn't render (missing '{marker}')"
+    if route in LATE:
+        assert LATE[route] in dom, f"{route}: a card that loads after the page didn't render (missing '{LATE[route]}')"
     assert "data-js-error" not in dom, f"{route}: JavaScript error"
     assert "Not found." not in dom
     assert 'aria-current="true"' in dom or route == "#/settings", f"{route}: no section highlighted in the nav"

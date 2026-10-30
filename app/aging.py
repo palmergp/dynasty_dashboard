@@ -58,13 +58,20 @@ def build(lg, years: int = 4) -> dict:
     """{"curve": {pos: {age: {"ratio", "n"}}}, "drift": {pos: {band: [average 1y, 2y, 3y ratio]}},
     "hist": value history used}."""
     hist = history.value_history(lg, dt.date(lg.season - years, 12, 1))
+    return {**fit(hist, lg.players_db), "hist": hist}
+
+
+def fit(hist: dict, players_db: dict, until: str | None = None) -> dict:
+    """Curve and drift from a value history, using only outcomes dated on/before `until`
+    (for out-of-sample checks)."""
     dates, hv = hist["dates"], hist["values"]
+    until = until or (dates[-1] if dates else "")
     ds = [dt.date.fromisoformat(d) for d in dates]
     later = {y: _later(ds, 365 * y) for y in HORIZONS}
     samples = []  # (pos, age, band, ratio)
     raw = defaultdict(list)  # (pos, band, years) -> ratios
     for pid, series in hv.items():
-        p = lg.players_db.get(pid) or {}
+        p = players_db.get(pid) or {}
         pos, birth = p.get("position"), p.get("birth_date")
         if pos not in ("QB", "RB", "WR", "TE") or not birth:
             continue
@@ -74,10 +81,10 @@ def build(lg, years: int = 4) -> dict:
                 continue
             for y in HORIZONS:
                 j = later[y][i]
-                if j is not None:
+                if j is not None and dates[j] <= until:
                     raw[(pos, _band(v0), y)].append(min(MAX_GAIN, (series[j] or 0.0) / v0))
             j = later[1][i]
-            if j is None:
+            if j is None or dates[j] > until:
                 continue
             v1 = series[j] if series[j] is not None else 0.0
             age = _age_on(birth, dates[i])
@@ -113,7 +120,7 @@ def build(lg, years: int = 4) -> dict:
     for (pos, b) in drift:
         steps = [statistics.mean(raw[(pos, b, y)]) for y in HORIZONS if len(raw[(pos, b, y)]) >= MIN_N]
         by_pos[pos][b] = [round(r, 3) for r in steps]
-    return {"curve": curve, "drift": dict(by_pos), "hist": hist}
+    return {"curve": curve, "drift": dict(by_pos)}
 
 
 def ratio(curve: dict, pos: str, age: float | None) -> float | None:

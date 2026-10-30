@@ -78,8 +78,9 @@ Pages are grouped into five sections along the top (a tab bar at the bottom on p
 |---|---|
 | **Rankings** | Franchise score rankings (players + picks vs. league average), and a league map (win-now strength vs. franchise value, in four quadrants). Also franchise composition (top-10 players / depth / picks), roster value over time, a positional strength heatmap (now and long-term), and age structure. |
 | **Playoff odds** | Playoff, bye, title and last-place odds for every team, from simulating the rest of the season with weekly projections. Also projected wins, strength of schedule ahead and so far, your remaining games with win chances, and each team's projected rookie-draft slot. |
-| **Timeline** | Every team's projected lineup strength now and 1, 2 and 3 years out if nobody trades, with ranks, the playoff line, the year you'd reach it, your core players' projected values and your picks turning into rookies. |
+| **Timeline** | Every team's projected lineup strength now and 1, 2 and 3 years out if nobody trades, with ranks, the playoff line, the year you'd reach it, your core players' projected values and your picks turning into rookies. *Build toward a year* finds the trades that raise your lineup most in a year you pick, at no more than a 10% cost today. |
 | **Teams** | Roster with values and notes, needs, and a manager profile with tendency bars and auto notes. Also your own notes on the manager, a window override, and their trade history. |
+| **Weekly recap** | A recap of any completed week to paste into the league chat: results, closest game, blowout, top score (ranked in league history), upsets vs. projections, player of the week, points left on the bench, standings, trades, big waiver bids and dynasty value movers. |
 | **Record book** | All-time records: champions, all-time standings (titles, finals, record, points), highest and lowest scores, biggest blowouts and closest games, best seasons, best single-game and "franchise player" performances, biggest trade fleeces (today, at the time, and reversals), best and worst draft classes, draft steals and busts, and best pickups. Your entries are highlighted. |
 
 **Trades**
@@ -87,9 +88,9 @@ Pages are grouped into five sections along the top (a tab bar at the bottom on p
 | Page | What it's for |
 |---|---|
 | **Find trades** | Teams ranked by fit, with 3 suggested packages each. Each package shows market fairness, your team-context gain, their acceptance likelihood, and the reasons behind it. |
-| **Evaluate** | Build any trade between two teams by clicking assets. *Make it work for both sides* suggests the smallest changes (ask for more, keep a piece, swap one) that make the deal good for Team A and acceptable to Team B. Shows the market verdict, a per-source breakdown, and for each side: context value, lineup impact, age change, pick capital, roster cuts and acceptance. "Suggest trades with Team B" generates packages for one partner. |
-| **Deadline** | Your players worth selling before the trade deadline (countdown included): who values them most among likely playoff teams, what they're expected to lose in a year, and a ready-made asking price from each of the two best buyers that works for both sides. |
-| **League prices** | How this league prices each position, pick round and age group in real trades, compared with the market on each trade day, with the trades behind each number. |
+| **Evaluate** | Build any trade between two teams by clicking assets. *Make it work for both sides* suggests the smallest changes (ask for more, keep a piece, swap one) that make the deal good for Team A and acceptable to Team B. *Season impact* shows both teams' playoff odds, title odds and projected draft slot with and without the trade. *Message to send* writes a short note for Team B on why the deal helps them. Shows the market verdict, a per-source breakdown, and for each side: context value, lineup impact, age change, pick capital, roster cuts and acceptance. "Suggest trades with Team B" generates packages for one partner. |
+| **Deadline** | Your players worth selling before the trade deadline (countdown included): who values them most among likely playoff teams, what they're expected to lose in a year, and a ready-made asking price from each of the two best buyers that works for both sides. Also an out-of-sample check of how the sell verdicts have held up. |
+| **League prices** | How this league prices each position, pick round and age group in real trades, compared with the market on each trade day, with the trades behind each number. Also which calculator (KeepTradeCut or DynastyProcess) each manager seems to trade by. |
 | **Trade history** | Who won every trade. Each one shows the value gap on trade day, the peak gap since and the gap today, the value of each player then and now, the start points each side got, and a chart of each side's haul over time. Also a manager leaderboard (record, summed gaps then and now, points gained and given), a chart of won-at-the-time vs. won-in-hindsight, and filters by season and manager. |
 
 **Players**
@@ -98,7 +99,7 @@ Pages are grouped into five sections along the top (a tab bar at the bottom on p
 |---|---|
 | **Rostered** | Every rostered player with values from each source, win-now value and 30-day trend. You can add your own value override and notes here. |
 | **Breakouts** | Players whose role is likely to grow before the market prices it in: free agents, trade targets on other rosters (with a "Trade for" button) or your own. Includes a breakout-vs-value map, the breakout board, the contract-year-backup watchlist (the Isaiah Likely pattern), depth-chart shake-ups for next season (who moves up if a starter leaves), and a backtest of how last season's flags did. |
-| **Buy low** | Players whose value dropped 15%+ from their 4-month high while their role held (price dips, scoring slumps, injury dips), split into trade targets, free agents and your own players not to sell low. |
+| **Buy low** | Players whose value dropped 15%+ from their 4-month high while their role held (price dips, scoring slumps, injury dips), split into trade targets, free agents and your own players not to sell low. Also a check of how past price dips turned out. |
 | **Free agents** | Every available QB/RB/WR/TE on an NFL roster, scored for your team. Suggested adds (with why, who to drop, the gain and a FAAB bid), drop candidates, a map of upside vs. value to you, and a filterable, sortable table of everyone available with usage, depth chart and contract. |
 | **Pickup history** | Every waiver claim and free-agent add. Shows pickups per team, a line chart of the value of pickups on each roster over time, and a scorecard (pickups, FAAB spent, still rostered, hits, value at pickup, value captured, start points, best pickups). Also the league's top pickups by value captured and by start points. Season filter. |
 | **Pickup history › team** | One team's pickup tiles and ranks, its pickup value vs. the league median, and every pickup with value at pickup, peak while held, value now, value captured, start points, a sparkline and the outcome. |
@@ -108,7 +109,8 @@ Pages are grouped into five sections along the top (a tab bar at the bottom on p
 
 | Page | What it's for |
 |---|---|
-| **Upcoming draft** | The next rookie draft, plus *When to sell picks*: how next year's picks typically gain or lose value month by month. your picks with projected slots and values, pick capital by team, a heatmap of where every first-round pick will likely land, and how each manager drafts (position leanings, how often they take the best available). Once the rookie class has values after the NFL draft, it adds a big board and mock drafts of who's likely available at each of your picks. |
+| **Upcoming draft** | The next rookie draft: your picks with projected slots and values, pick capital by team, a heatmap of where every first-round pick will likely land, and how each manager drafts (position leanings, how often they take the best available). Once the rookie class has values after the NFL draft, it adds a big board and mock drafts of who's likely available at each of your picks. *When to sell picks* shows how next year's picks typically gain or lose value month by month. |
+| **Roster room** | Next offseason's roster crunch: incoming rookies, who stays on, moves to or ages off the taxi squad, how many players you'll have to cut and in what order (trade the ones with value first), and every other team's crunch, with the best players likely to be cut elsewhere. |
 | **Past drafts** | Draft performance for the startup and rookie drafts. A line chart of every team's draft-class value over time, with up to 4 teams highlighted, as total value or indexed to draft day = 100. Also a scorecard (draft-day value, value now, change, % still on roster and in the league, best and worst picks), the league's biggest risers and fallers, and roster construction (startup / rookie draft / trade / waivers). |
 | **Past drafts › team** | One team's draft-class value vs. the league median, stat tiles, every pick with its draft-day value, current value, sparkline and status (on roster, traded, dropped), and its roster construction. |
 
@@ -271,13 +273,40 @@ One install can hold several leagues. Each league you've opened is saved under *
 - For each side, log(received ÷ sent) is shared among the assets it sent by value. Averaged across trades, that's a price index per kind of asset, pulled toward 0 with two "at market" pseudo-trades so small samples don't swing.
 - A league with few trades will read close to market everywhere, which is an honest "no edge yet".
 
+**Build toward a year** (`app/target.py`)
+- Uses the rebuild timeline's projections. For each team, your assets that add least to your lineup in the target year (but that they value) are tried against theirs that add most, 1–2 for 1–3.
+- Kept: deals they'd accept about 45%+ of the time that cost you at most 10% in team-context value today. Ranked by your lineup gain in that year × acceptance.
+
+**Calculator leans** (`app/calcfit.py`)
+- Every completed trade is valued on its trade date in KeepTradeCut's numbers (each traded player's daily KTC history, from his KTC page) and DynastyProcess's (weekly history). Rookie picks use DP's pick ranking that week, converted into each calculator's numbers at the same rank, so they don't favor either one. FantasyCalc has no history, so it isn't checked.
+- A manager who trusts a calculator accepts deals that look fine on it, so their side should look better on that one. Lean = the average of (result on KTC − result on DP) over their trades; it counts with 4+ trades and at least 1.5 standard errors from zero.
+- A lean shifts the market half of that manager's acceptance odds 30% (likely) or 50% (clear) toward their calculator, and Find trades lists your assets it rates above the consensus and theirs it rates below.
+- DP's values fall off faster from stars to depth than KTC's, so a DP lean also reflects valuing studs more.
+
+**Model checks** (`app/checks.py`)
+- Sell verdicts, out of sample: the age curve is refit using only results known a year before the latest full year of data, then every player's verdict over that year (every 4 weeks) is compared with what happened to his value relative to similar players. So far: "sell now" players finished about 10% behind similar players, "sell within a year" about 7% behind, "hold" about even and "rising" about 4% ahead. Expected values averaged 98% of what happened, with a typical miss around 22%.
+- Buy low: every 4 weeks since 2021, players down 15%+ from their 4-month high are compared with similar players 6 and 12 months later. Moderate (15–25%) dips beat similar players by about 8% over a year; deeper drops did no better than their peers, so the list stops rewarding drops past 25%. Past usage isn't available, so the role filter isn't tested.
+
+**Season impact** (`app/season.py`)
+- The season simulation runs twice with the same random games, once with each team's roster after the trade. The difference is the trade's effect on playoff odds, title odds and the projected slot of each team's own first-round pick.
+
+**Offer message** (`app/pitch.py`)
+- Built only from points in the other manager's favor: a need the player fills (only if he'd start and their lineup doesn't get weaker), their lineup and playoff-odds gain, their window, the calculator that has them ahead (theirs if they lean), and their trade habits. Nothing about your own gain.
+
+**Weekly recap** (`app/recap.py`)
+- From Sleeper's weekly matchups. Upsets: the winner's starters were projected at least 10 points below the loser's (Sleeper's projections that week). Points left on the bench: the best possible lineup from that week's roster scores minus the actual score.
+
+**Roster room** (`app/roster.py`)
+- Next season: one rookie per pick in the next draft. Taxi players past the league's taxi years come off; open taxi spots go to the lowest-valued rookies (and, if the league allows veterans on taxi, to taxi-age players who don't start).
+- Anything over the roster limit (QB/RB/WR/TE spots; each kicker or defense slot takes one off) has to be cut, lowest expected value a year from now first. Taxi players can be in the cut order too, since a rookie can take their spot. IR players are left on IR.
+
 **Trades** (`app/trade.py`, `app/suggest.py`)
 - **Package value** = (Σ vᵖ)^(1/p), with p = 1.35 by default. This adds a stud premium, so two 3,000-value players don't equal one 6,000.
 - **Context value** is what an asset is worth to a particular team:
   - Contenders weight win-now production more.
   - Rebuilders weight picks more and discount players nearing their position's age cliff (QB 32, RB 26, WR 28, TE 29).
   - Positional needs adjust the value up or down.
-- **Acceptance** blends the other manager's tendency-adjusted context view 50/50 with the market. Real managers check trade calculators.
+- **Acceptance** blends the other manager's tendency-adjusted context view 50/50 with the market (tilted toward their calculator if they have a clear lean). Real managers check trade calculators.
   - **Calibration:** in about 190 completed trades across two leagues, the side that gave up more value lost a median 26%. That holds even after team context, because managers' and calculators' valuations differ a lot. So the acceptance curve is gentle: a fair deal scores about 48 (a coin flip), +10% for them about 60, and a deal like that median real one about 20.
   - Labels: Likely 60+, Possible 35–59, Unlikely under 35.
   - Rejected offers aren't visible in Sleeper, so this checks plausibility, not the exact odds.
@@ -301,7 +330,7 @@ All local data lives in `data/` (git-ignored):
 - `cache/`: API responses. Delete it to force a full refresh.
 
 ## Data sources and terms
-This project isn't affiliated with or endorsed by Sleeper, FantasyCalc, KeepTradeCut, DynastyProcess, nflverse or OverTheCap. It reads their public APIs, files and web pages; the data belongs to its providers and is subject to their terms. KeepTradeCut values are read from its public rankings page, so check its terms before relying on that source; you can set its weight to 0 in Settings. No data is redistributed in this repository; everything is fetched and cached locally in `data/`.
+This project isn't affiliated with or endorsed by Sleeper, FantasyCalc, KeepTradeCut, DynastyProcess, nflverse or OverTheCap. It reads their public APIs, files and web pages; the data belongs to its providers and is subject to their terms. KeepTradeCut values are read from its public rankings page (and, for calculator leans, the public pages of traded players), so check its terms before relying on that source; you can set its weight to 0 in Settings. No data is redistributed in this repository; everything is fetched and cached locally in `data/`.
 
 ## License
 [MIT](LICENSE). This covers the code in this repository, not the data it fetches.

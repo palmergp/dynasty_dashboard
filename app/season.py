@@ -123,7 +123,9 @@ def _draft_rule(lg) -> str:
     return "record" if agree(by_rec) > agree(by_max) else "max_pf"
 
 
-def simulate(lg, n_sims: int = N_SIMS, seed: int = 7) -> dict:
+def simulate(lg, n_sims: int = N_SIMS, seed: int = 7, rosters: dict | None = None) -> dict:
+    """`rosters` (roster_id -> players) replaces those teams' players, e.g. after a trade."""
+    rosters = rosters or {}
     st = lg.info.get("settings") or {}
     n_playoff = st.get("playoff_teams") or 6
     done, left, pairs = _schedule(lg)
@@ -135,7 +137,7 @@ def simulate(lg, n_sims: int = N_SIMS, seed: int = 7) -> dict:
     proj_week = {}
     for w in left + [reg_end + 1, reg_end + 2, reg_end + 3]:
         proj = _projections(lg.season, w)
-        proj_week[w] = {rid: _lineup_points(lg, t["players"], proj) for rid, t in teams.items()}
+        proj_week[w] = {rid: _lineup_points(lg, rosters.get(rid, t["players"]), proj) for rid, t in teams.items()}
     strength = {rid: statistics.mean(proj_week[w][rid] for w in (reg_end + 1, reg_end + 2, reg_end + 3)) for rid in teams}
 
     base_w = {rid: t["wins"] + 0.5 * t["ties"] for rid, t in teams.items()}
@@ -221,3 +223,31 @@ def simulate(lg, n_sims: int = N_SIMS, seed: int = 7) -> dict:
             g["opp_proj"] = round(proj_week[g["week"]][opp], 1) if opp in teams else None
     return {"teams": rows, "sims": n_sims, "sd": round(sd, 1), "weeks_done": len(done), "weeks_left": left,
             "playoff_teams": n_playoff, "draft_rule": rule, "draft_season": lg.season + 1, "_orders": orders}
+
+
+def trade_impact(lg, a_rid: int, a_gives: list, b_rid: int, b_gives: list) -> dict | None:
+    """Both teams' playoff odds, title odds and projected draft slot before and after a trade
+    (same simulated seasons both times, so the difference is the trade). None when the
+    regular season is over."""
+    rosters = {}
+    for rid, gives, gets in ((a_rid, a_gives, b_gives), (b_rid, b_gives, a_gives)):
+        out = {x["id"] for x in gives}
+        rosters[rid] = [x for x in lg.teams[rid]["players"] if x["id"] not in out] +                        [dict(x, taxi=False, ir=False) for x in gets if x["kind"] == "player"]
+    before = simulate(lg)
+    if not before["weeks_left"]:
+        return None
+    after = simulate(lg, rosters=rosters)
+    nxt = before["draft_season"]
+    owner = {pk["orig_roster_id"]: t["manager"] for t in lg.teams.values() for pk in t["picks"]
+             if pk["season"] == nxt and pk["round"] == 1}
+    moved = {x["orig_roster_id"]: (b_rid if x in a_gives else a_rid) for x in a_gives + b_gives
+             if x["kind"] == "pick" and x["season"] == nxt and x["round"] == 1}
+    out = []
+    for rid in (a_rid, b_rid):
+        b = next(r for r in before["teams"] if r["roster_id"] == rid)
+        a = next(r for r in after["teams"] if r["roster_id"] == rid)
+        out.append({"roster_id": rid, "manager": lg.teams[rid]["manager"],
+                    **{k: [b[k], a[k]] for k in ("playoff_pct", "title_pct", "avg_slot", "weekly_proj")},
+                    "pick_owner": owner.get(rid), "pick_owner_after": lg.teams[moved[rid]]["manager"] if rid in moved else owner.get(rid)})
+    return {"teams": out, "draft_season": nxt, "draft_rule": before["draft_rule"], "weeks_left": len(before["weeks_left"]),
+            "teams_n": len(lg.teams)}

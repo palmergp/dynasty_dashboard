@@ -53,8 +53,9 @@ def _snapshot(sha: str, superflex: bool) -> list[dict]:
     return cached(f"dp:snap:{sha}:{col}", None, fetch)
 
 
-def value_history(lg, since: dt.date) -> dict:
-    """{"dates": [iso...], "values": {sleeper_id: [value|None per date]}} on the app's scale.
+def value_history(lg, since: dt.date, raw: bool = False) -> dict:
+    """{"dates": [iso...], "values": {sleeper_id: [value|None per date]}} on the app's scale
+    (or in DynastyProcess's own numbers with raw=True).
 
     A player is None before his first appearance in DP's list (e.g. rookies before the
     NFL draft). If he later drops off it, he's worth at most that snapshot's floor (its
@@ -69,7 +70,7 @@ def value_history(lg, since: dt.date) -> dict:
     idx = _name_index(lg.players_db)
     mapper = lg.values.mappers.get("dynastyprocess")
     top = max((r["value"] for s in snaps for r in s), default=1)
-    scale = mapper or (lambda v: v / top * SCALE)
+    scale = (lambda v: v) if raw else mapper or (lambda v: v / top * SCALE)
 
     dates = [c["date"] for c in commits]
     values: dict[str, list] = {}

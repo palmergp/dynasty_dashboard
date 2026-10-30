@@ -12,8 +12,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (buylow, config, counter, deadline, draftprep, drafts, feed, future, market, opportunity, pickhistory, pickups, rankings,
-               records, retro, season, store, suggest, trade, waivers)
+from . import (buylow, checks, config, counter, deadline, draftprep, drafts, feed, future, market, opportunity, pickhistory, pickups,
+               pitch, rankings, recap, records, retro, roster, season, store, suggest, target, trade, waivers)
 from .config import ROOT
 from .league import League
 from .values import SOURCE_LABELS
@@ -176,8 +176,8 @@ class TradeIn(BaseModel):
     b_gives: list[AssetRef]
 
 
-@app.post("/api/evaluate")
-def evaluate(body: TradeIn):
+def _trade(body: TradeIn):
+    """(league, A's assets, B's assets) for a proposed trade, validated."""
     lg = league()
     if body.a_rid not in lg.teams or body.b_rid not in lg.teams or body.a_rid == body.b_rid:
         raise HTTPException(400, "Pick two different teams")
@@ -190,8 +190,29 @@ def evaluate(body: TradeIn):
                 raise HTTPException(400, f"Asset {r.id} is not on that roster")
             out.append(a)
         return out
-    res = trade.evaluate(lg, body.a_rid, resolve(body.a_gives, body.a_rid), body.b_rid, resolve(body.b_gives, body.b_rid))
-    return _clean(res)
+    return lg, resolve(body.a_gives, body.a_rid), resolve(body.b_gives, body.b_rid)
+
+
+@app.post("/api/evaluate")
+def evaluate(body: TradeIn):
+    lg, a_gives, b_gives = _trade(body)
+    return _clean(trade.evaluate(lg, body.a_rid, a_gives, body.b_rid, b_gives))
+
+
+@app.post("/api/trade-impact")
+def trade_impact(body: TradeIn):
+    """Both teams' playoff odds and projected draft slot before and after the trade."""
+    lg, a_gives, b_gives = _trade(body)
+    return _clean(season.trade_impact(lg, body.a_rid, a_gives, body.b_rid, b_gives) or {"teams": []})
+
+
+@app.post("/api/pitch")
+def trade_pitch(body: TradeIn):
+    """A message to send with the offer, from Team A to Team B."""
+    lg, a_gives, b_gives = _trade(body)
+    if not a_gives or not b_gives:
+        raise HTTPException(400, "Add assets to both sides first")
+    return pitch.write(lg, trade.evaluate(lg, body.a_rid, a_gives, body.b_rid, b_gives))
 
 
 @app.post("/api/counter")
@@ -341,6 +362,38 @@ def pick_timing():
 def league_prices():
     lg = league()
     return _memo("prices", lg, lambda: _clean(market.analyze(lg)))
+
+
+@app.get("/api/target")
+def target_report(year: int | None = None):
+    lg = league()
+    if not lg.me:
+        raise HTTPException(400, "Your username wasn't found in the league; check Settings.")
+    return _memo(f"target:{year}", lg, lambda: _clean(target.analyze(lg, year)))
+
+
+@app.get("/api/calculators")
+def calculators():
+    lg = league()
+    return {**_clean(lg.calcfit), "error": lg.calcfit_error}
+
+
+@app.get("/api/checks")
+def model_checks():
+    lg = league()
+    return _memo("checks", lg, lambda: _clean(checks.analyze(lg)))
+
+
+@app.get("/api/recap")
+def weekly_recap(week: int | None = None):
+    lg = league()
+    return _memo(f"recap:{week}", lg, lambda: _clean(recap.analyze(lg, week)))
+
+
+@app.get("/api/roster-room")
+def roster_room():
+    lg = league()
+    return _memo("roster", lg, lambda: _clean(roster.analyze(lg)))
 
 
 @app.get("/api/status")

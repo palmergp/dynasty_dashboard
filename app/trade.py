@@ -14,6 +14,7 @@ import math
 
 from .league import POSITIONS, SELL_AGE, SLOT_ELIGIBLE
 from .tendencies import package_value
+from .values import SOURCE_LABELS
 
 YOUNG_AGE, OLD_AGE = 24.5, 27.5
 # How quickly acceptance falls as a deal gets worse for them. Calibrated on ~190 completed
@@ -53,6 +54,14 @@ def context_value(a: dict, team: dict, tend: dict | None = None) -> float:
             elif a["age"] >= OLD_AGE:
                 v *= 1 - 0.08 * tend["youth_affinity"] * c
     return v
+
+
+def market_view(a: dict, tend: dict | None = None) -> float:
+    """Market value as a manager sees it: the blend, tilted toward the calculator their past
+    trades suggest they use (calcfit), by how clear that lean is."""
+    c = (tend or {}).get("calc")
+    src = (a.get("sources") or {}).get(c["source"]) if c else None
+    return a["value"] + c["strength"] * (src - a["market"]) if src else a["value"]
 
 
 def _roster_limit(lg) -> int:
@@ -185,10 +194,13 @@ def evaluate(lg, a_rid: int, a_gives: list[dict], b_rid: int, b_gives: list[dict
         gain_pct = gain / (max(recv, sent) or 1)
         recv_t = package_value([context_value(x, team, tend) for x in gets], p)
         sent_t = package_value([context_value(x, team, tend) for x in gives], p)
-        mkt_recv = package_value([x["value"] for x in gets], p)
-        mkt_sent = package_value([x["value"] for x in gives], p)
+        mkt_recv = package_value([market_view(x, tend) for x in gets], p)
+        mkt_sent = package_value([market_view(x, tend) for x in gives], p)
         acc, reasons = acceptance(perceived_gain(recv_t, sent_t, mkt_recv, mkt_sent, cut_val),
                                   tend, len(gets), len(gives))
+        if tend.get("calc"):
+            pct = (mkt_recv - mkt_sent) / (max(mkt_recv, mkt_sent) or 1) * 100
+            reasons.append(f"Seems to trade by {SOURCE_LABELS[tend['calc']['source']]}; leaning that way, this is {pct:+.0f}% for them.")
         sides.append({
             "roster_id": team["roster_id"], "manager": team["manager"], "window": team["window"],
             "gets_value": round(recv), "gives_value": round(sent), "gain": round(gain),

@@ -9,8 +9,10 @@ from __future__ import annotations
 
 from itertools import combinations
 
-from .trade import acceptance, context_value, evaluate, perceived_gain, roster_cost_fn
+from .trade import acceptance, context_value, evaluate, market_view, perceived_gain, roster_cost_fn
+from . import calcfit
 from .tendencies import package_value
+from .values import SOURCE_LABELS
 
 MAX_GIVE_POOL = 9
 MAX_GET_POOL = 12
@@ -24,7 +26,7 @@ def _pool(assets, me, them, tend, min_value, mine: bool, size: int):
             continue
         v_me, v_them = context_value(a, me), context_value(a, them, tend)
         edge = ((v_them - v_me) if mine else (v_me - v_them)) / (a["value"] or 1)
-        rows.append((a, v_me, v_them, edge))
+        rows.append((a, v_me, v_them, edge, market_view(a, tend)))
     # Prefer assets with an arbitrage edge, but keep high-value ones in the mix.
     rows.sort(key=lambda r: -(r[3] * 3 + r[0]["value"] / 10000))
     return rows[:size]
@@ -48,6 +50,7 @@ def for_partner(lg, partner_rid: int, limit: int = 4) -> list[dict]:
     cands = []
     for give in _combos(give_pool, 2):
         mkt_give = package_value([r[0]["value"] for r in give], p)
+        view_give = package_value([r[4] for r in give], p)
         give_me = package_value([r[1] for r in give], p)
         give_them = package_value([r[2] for r in give], p)
         give_ids = {r[0]["id"] for r in give}
@@ -66,7 +69,8 @@ def for_partner(lg, partner_rid: int, limit: int = 4) -> list[dict]:
                 continue
             get_them = package_value([r[2] for r in get], p)
             cut_them = their_cut(give_np, {r[0]["id"] for r in get})
-            acc, _ = acceptance(perceived_gain(give_them, get_them, mkt_give, mkt_get, cut_them),
+            view_get = package_value([r[4] for r in get], p)
+            acc, _ = acceptance(perceived_gain(give_them, get_them, view_give, view_get, cut_them),
                                 tend, len(give), len(get))
             if acc < 45:  # keep suggestions near fair for them; the calibrated curve is gentle
                 continue
@@ -136,6 +140,14 @@ def partners(lg, per_partner: int = 3) -> list[dict]:
             reasons.append(f"Needs {', '.join(overlap)}, which you have to sell.")
         if tend.get("tags"):
             reasons.append("Tendencies: " + ", ".join(tend["tags"]) + ".")
+        g = calcfit.gaps(lg, them, me["players"] + me["picks"], them["players"] + them["picks"])
+        if g:
+            txt = f"Seems to trade by {SOURCE_LABELS[g['source']]}."
+            if g["offer"]:
+                txt += " It rates yours above the consensus: " + ", ".join(f"{x['name']} (+{x['pct']}%)" for x in g["offer"]) + "."
+            if g["ask"]:
+                txt += " It rates theirs below: " + ", ".join(f"{x['name']} ({x['pct']}%)" for x in g["ask"]) + "."
+            reasons.append(txt)
         out.append({"roster_id": rid, "manager": them["manager"], "team_name": them["team_name"],
                     "window": them["window"], "contend_score": them["contend_score"], "fit": round(fit),
                     "reasons": reasons, "suggestions": sugg})

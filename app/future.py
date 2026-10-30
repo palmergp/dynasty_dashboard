@@ -48,6 +48,27 @@ def _rookie_factors(lg, value: float) -> list[float]:
     return out
 
 
+def asset_path(lg, a: dict) -> list[float]:
+    """Projected value now and 1..YEARS years out, for a player or a draft pick."""
+    if a["kind"] == "player":
+        return _player_path(a)
+    f = _rookie_factors(lg, a["value"])
+    return [a["value"] if a["season"] > lg.season + y else a["value"] * f[lg.season + y - a["season"]] for y in range(YEARS + 1)]
+
+
+def lineup_entries(lg, assets: list[dict], y: int, path=None) -> list[tuple[str, float]]:
+    """(pos, value in year y) for the assets that can play in year y: players, plus picks
+    already drafted by then (as rookies of unknown position)."""
+    path = path or (lambda a: asset_path(lg, a))
+    out = []
+    for a in assets:
+        if a["kind"] == "player":
+            out.append((a["pos"], path(a)[y]))
+        elif a["season"] <= lg.season + y:
+            out.append(("ROOKIE", path(a)[y]))
+    return out
+
+
 def _lineup(lg, players: list[tuple[str, float]]) -> float:
     """Best lineup value from (pos, value) pairs; pos 'ROOKIE' fits slots that take RB or WR."""
     pool = sorted(players, key=lambda x: -x[1])
@@ -68,11 +89,7 @@ def analyze(lg) -> dict:
     teams = []
     for t in lg.teams.values():
         players = [(a, _player_path(a)) for a in t["players"] if a["kind"] == "player"]
-        picks = []
-        for pk in t["picks"]:
-            f = _rookie_factors(lg, pk["value"])
-            picks.append((pk, [pk["value"] if pk["season"] > lg.season + y else pk["value"] * f[lg.season + y - pk["season"]]
-                               for y in range(YEARS + 1)]))
+        picks = [(pk, asset_path(lg, pk)) for pk in t["picks"]]
         strength, franchise = [], []
         for y in range(YEARS + 1):
             drafted = [("ROOKIE", path[y]) for pk, path in picks if pk["season"] <= lg.season + y]
