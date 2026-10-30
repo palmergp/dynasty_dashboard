@@ -127,6 +127,12 @@ class League:
             self.sim = season.simulate(self)
         except Exception:  # no schedule or projections: picks fall back to tier prices
             self.sim = None
+        from . import secondhalf
+        try:
+            self.h2 = secondhalf.build(self)
+        except Exception:  # projections or usage missing: no second-half outlook
+            self.h2 = None
+        secondhalf.attach(self)
         try:
             self.rookies = rookies.analyze(self)
             self.rookies_error = None
@@ -404,6 +410,10 @@ def player_notes(a: dict, lg: "League") -> list[str]:
     pr = ((getattr(lg, "rookies", None) or {}).get("prospects") or {}).get(a["id"])
     if pr:
         notes.append(capital_note(pr))
+    from .secondhalf import note as h2_note
+    h2 = h2_note(a)
+    if h2:
+        notes.append(h2)
     if a.get("injury"):
         notes.append(f"Injury status: {a['injury']}.")
     if a.get("taxi"):

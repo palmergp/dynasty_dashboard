@@ -2782,7 +2782,7 @@ const ICONS = {
 const SECTIONS = [
   { id: "home", label: "Home", pages: [["#/", "Dashboard"], ["#/lineup", "Lineup"], ["#/calendar", "Calendar"]] },
   { id: "league", label: "League", pages: [["#/rankings", "Rankings"], ["#/season", "Playoff odds"], ["#/future", "Timeline"], ["#/team", "Teams"], ["#/recap", "Weekly recap"], ["#/records", "Record book"]] },
-  { id: "trades", label: "Trades", pages: [["#/partners", "Find trades"], ["#/trade", "Evaluate"], ["#/plan", "Plan"], ["#/deadline", "Deadline"], ["#/prices", "League prices"], ["#/history", "Trade history"]] },
+  { id: "trades", label: "Trades", pages: [["#/partners", "Find trades"], ["#/trade", "Evaluate"], ["#/plan", "Plan"], ["#/deadline", "Deadline"], ["#/secondhalf", "Second half"], ["#/prices", "League prices"], ["#/history", "Trade history"]] },
   { id: "players", label: "Players", pages: [["#/players", "Rostered"], ["#/breakouts", "Breakouts"], ["#/buylow", "Buy low"], ["#/pickups", "Free agents"], ["#/waivers", "Pickup history"]] },
   { id: "draft", label: "Draft", pages: [["#/draftprep", "Upcoming draft"], ["#/hitrates", "Hit rates"], ["#/roster", "Roster room"], ["#/drafts", "Past drafts"]] },
 ];
@@ -2810,6 +2810,84 @@ function renderNav(h) {
 }
 
 // ---------------------------------------------------------------- router
+// ---------------------------------------------------------------- second half
+Object.assign(HELP, {
+  h2Outlook: "Points a game expected from here, in your league's scoring: the average of a usage model (points, targets and carries so far; backtested on 2016–2025 seasons) and Sleeper's projections for the remaining weeks.",
+  h2Gain: "Points a week the team's best lineup would gain with him, over the rest of the regular season. Byes and projected absences count. Below: the same for the fantasy playoff weeks.",
+  h2PerK: "Lineup points gained over the rest of the season per 1,000 of dynasty value: how cheaply he helps now.",
+  h2Model: "What his volume says: points a game expected from his points so far plus his targets and carries (targets count 1.5). Blank when his role is too small or he has fewer than 3 games.",
+});
+
+async function viewSecondHalf(rid) {
+  const H = await api(`/api/secondhalf${rid ? `?roster_id=${rid}` : ""}`);
+  if (!H.week) return `<div class="card"><h1>Second half</h1><p class="muted">The outlook needs regular-season weeks left to play. Check back next season.</p></div>`;
+  setTimeout(() => { const s = $("#h2-team"); if (s) s.onchange = e => { location.hash = `#/secondhalf/${e.target.value}`; }; }, 0);
+  const span = ws => ws.length > 1 ? `weeks ${ws[0]}–${ws[ws.length - 1]}` : ws.length ? `week ${ws[0]}` : "none";
+  const one = n => (n == null ? "–" : n.toFixed(1));
+  const chg = n => (n == null ? "–" : `<span class="${n >= H.move ? "delta-pos" : n <= -H.move ? "delta-neg" : "muted"}">${n > 0 ? "+" : ""}${n.toFixed(1)}</span>`);
+  const who = r => `<b>${posBadge(r.pos)} ${playerLink(r.id, r.name)}</b>${r.injury ? ` <span class="badge acc-Possible">${esc(r.injury)}</span>` : ""}
+    <div class="muted small">${r.age ? r.age + "y · " : ""}${esc(r.nfl_team || "")}</div>`;
+  const owner = r => `<a href="#/team/${r.owner_rid}">${esc(r.owner)}</a> <span class="muted small">${r.owner_odds != null ? r.owner_odds.toFixed(0) + "%" : ""}</span>
+    ${r.seller ? '<span class="badge tag">seller</span>' : r.contender ? '<span class="badge res-even">contending</span>' : ""}`;
+  const outlook = r => `<b>${one(r.rate)}</b><div class="muted small">so far ${one(r.so_far)}</div>`;
+  const dl = H.deadline || {};
+  const dlTxt = !dl.week ? "no deadline" : dl.weeks_left == null ? `week ${dl.week}` : dl.weeks_left < 0 ? "passed" : dl.weeks_left === 0 ? "this week" : `${dl.weeks_left} week${dl.weeks_left === 1 ? "" : "s"} away`;
+  const targetTable = rows => `<div class="scroll"><table><thead><tr><th>Player</th><th>Owner</th><th class="num">${hint("Outlook", HELP.h2Outlook)}</th>
+      <th class="num">${hint("Lineup gain", HELP.h2Gain)}</th><th class="num">Value</th><th class="num">${hint("Pts per 1k", HELP.h2PerK)}</th><th>Why</th>${H.is_me ? "<th></th>" : ""}</tr></thead>
+    <tbody>${rows.map(r => `<tr><td>${who(r)}</td><td>${owner(r)}</td><td class="num" data-sort="${r.rate}">${outlook(r)}</td>
+      <td class="num" data-sort="${r.gain_week}"><b>+${r.gain_week.toFixed(1)}</b>/wk<div class="muted small">playoffs +${r.gain_po.toFixed(1)}</div></td>
+      <td class="num">${fmt(r.value)}</td><td class="num">${r.per_k.toFixed(1)}</td><td class="small">${esc(r.reasons[0] || "")}</td>
+      ${H.is_me ? `<td><button class="small" onclick='openInEvaluator(${JSON.stringify({ b: r.owner_rid, aGives: [], bGives: [{ kind: "player", id: r.id }] })})'>Trade for</button></td>` : ""}</tr>`).join("")
+      || `<tr><td colspan="8" class="muted">Nobody on another roster would start for this team.</td></tr>`}</tbody></table></div>`;
+  const targets = `<div class="card"><h2>Win-now targets for ${esc(H.manager)}</h2>
+      <p class="muted small">Players on other rosters who'd raise ${H.is_me ? "your" : "this team's"} best lineup the most from here. Players on teams with ${H.contender_odds}%+ playoff odds are listed last: contenders rarely sell starters.
+        Sellers are rebuilding teams or teams under ${H.seller_odds}%.</p>
+      <h3>Biggest upgrades</h3>${targetTable(H.biggest)}
+      <h3>Best value</h3><p class="muted small">At least 1 point a week, ranked by lineup points per 1,000 of dynasty value: veterans who help now and cost little in a dynasty trade.</p>${targetTable(H.cheap)}</div>`;
+  const sell = `<div class="card"><h2>Contenders who'd gain most from ${H.is_me ? "your" : `${esc(H.manager)}'s`} players</h2>
+      <p class="muted small">Points a week each team with 50%+ playoff odds would add to its best lineup. These are the players contenders should pay most for before the deadline${H.is_me ? ` (see <a href="#/deadline">Deadline</a> for asking prices)` : ""}.</p>
+      <div class="scroll"><table data-nosort><thead><tr><th>Player</th><th class="num">${hint("Outlook", HELP.h2Outlook)}</th><th>Contenders (lineup gain a week)</th><th>Note</th></tr></thead>
+      <tbody>${H.sell.map(r => `<tr><td>${who(r)}</td><td class="num">${outlook(r)}</td>
+        <td>${r.buyers.map(b => `<div><a href="#/team/${b.roster_id}">${esc(b.manager)}</a> <b>+${b.gain_week.toFixed(1)}</b> <span class="muted small">${b.playoff_pct.toFixed(0)}% playoffs</span>
+          ${H.is_me ? `<button class="small" onclick='openInEvaluator(${JSON.stringify({ b: b.roster_id, aGives: [{ kind: "player", id: r.id }], bGives: [] })})'>Shop</button>` : ""}</div>`).join("")}</td>
+        <td class="small">${esc(r.reasons[0] || "")}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">No contender would start any of these players.</td></tr>`}</tbody></table></div></div>`;
+  const moverTable = rows => `<table data-nosort><tbody>${rows.map(r => `<tr><td>${posBadge(r.pos)} ${playerLink(r.id, r.name)}<div class="muted small">${esc(r.owner)}</div></td>
+      <td class="num">${one(r.so_far)} → <b>${one(r.rate)}</b></td><td class="num">${chg(r.change)}</td><td class="small">${esc(r.reasons[0] || "")}</td></tr>`).join("")
+      || '<tr><td class="muted">None.</td></tr>'}</tbody></table>`;
+  const rebuilding = H.is_me && H.window === "rebuild";
+  return `<div class="card"><div class="row spread"><h1>Second half</h1>
+      <label class="field">Team<select id="h2-team">${H.teams.map(t => `<option value="${t.roster_id}" ${t.roster_id === H.roster_id ? "selected" : ""}>${esc(t.manager)}${t.window === "contend" ? " (contending)" : ""}</option>`).join("")}</select></label></div>
+    <p class="muted">Who should score more or less from here, and which trades help ${H.is_me ? "you" : esc(H.manager)} win now. Left: regular season ${span(H.reg_weeks)}, fantasy playoffs ${span(H.po_weeks)}.
+      ${rebuilding ? "You're rebuilding, so the contender sections show what other teams will chase; pick a contender above to see the league through their eyes." : ""}</p>
+    <div class="tiles">
+      <div class="tile"><div class="k">Games left</div><div class="v">${H.reg_weeks.length}</div><div class="d muted">+ ${H.po_weeks.length} playoff weeks</div></div>
+      <div class="tile"><div class="k">Playoff odds</div><div class="v">${H.playoff_pct != null ? H.playoff_pct.toFixed(0) + "%" : "–"}</div><div class="d muted">${esc(H.manager)}</div></div>
+      <div class="tile"><div class="k">Lineup a week</div><div class="v">${one(H.base_week)}</div><div class="d muted">best lineup, outlook points</div></div>
+      <div class="tile"><div class="k">Trade deadline</div><div class="v">${dl.week || "–"}</div><div class="d muted">${dlTxt}</div></div>
+    </div>
+    <details class="tableview"><summary>What predicts a second half?</summary>
+      <ul class="notes small">
+        <li><b>Volume beats points.</b> Targets and carries per game predict RB, WR and TE scoring better than points per game. Players whose points lag their volume tend to catch up, and players scoring above it tend to cool off. When this model and a points-only forecast disagreed by 1.5+ points a game at midseason, the model was right 64–70% of the time (RB 68%, WR 64%, TE 70%). For WRs the edge fades after week 11.</li>
+        <li><b>Recent form adds little.</b> The last 3 games and a rising or falling role barely improved on season averages.</li>
+        <li><b>Matchups barely carry over.</b> The points a defense allowed by position in weeks 1–8 correlate only 0.18 with what it allows in weeks 9–17. The remaining schedule helped a little for RBs only, and the fantasy-playoff schedule (weeks 15–17) predicted nothing at any position.</li>
+        <li><b>QBs regress.</b> Hot and cold starts both drift back toward the middle; volume adds nothing for them.</li>
+        <li>Backtest: nflverse weekly stats 2016–2025, players with 3+ games and 5+ PPR points a game, each season predicted from the others. Sleeper's projections are averaged in because they know about injuries, trades and depth charts.</li>
+        <li>In trade math, contenders' win-now value moves by up to 15% where the usage model and a points-only forecast disagree (QBs not at all). That counts in a team's real gain, not in what other managers are assumed to see.</li>
+      </ul></details></div>
+  ${rebuilding ? sell + targets : targets + sell}
+  <div class="card"><h2>${H.is_me ? "Your" : `${esc(H.manager)}'s`} players from here</h2>
+    <div class="scroll"><table><thead><tr><th>Player</th><th class="num">So far</th><th class="num">${hint("Usage model", HELP.h2Model)}</th><th class="num">Sleeper</th>
+      <th class="num">${hint("Outlook", HELP.h2Outlook)}</th><th class="num">Change</th><th class="num">Games left</th><th>Why</th></tr></thead>
+    <tbody>${H.mine.map(r => `<tr><td>${who(r)}</td><td class="num">${one(r.so_far)}<div class="muted small">${r.games} g</div></td><td class="num">${one(r.model)}</td><td class="num">${one(r.sleeper)}</td>
+      <td class="num"><b>${one(r.rate)}</b></td><td class="num" data-sort="${r.change ?? 0}">${chg(r.change)}</td>
+      <td class="num" data-sort="${r.left + r.left_po}">${r.left}/${r.weeks_reg}<div class="muted small">playoffs ${r.left_po}/${r.weeks_po}</div></td>
+      <td class="small"><ul class="notes" style="margin:0">${r.reasons.map(x => `<li>${esc(x)}</li>`).join("")}</ul></td></tr>`).join("")}</tbody></table></div></div>
+  <div class="grid g2">
+    <div class="card"><h2>Risers across the league</h2><p class="muted small">Outlook ${H.move}+ points a game above their pace so far.</p>${moverTable(H.risers)}</div>
+    <div class="card"><h2>Fallers across the league</h2><p class="muted small">Outlook ${H.move}+ points a game below their pace so far: sell-high candidates.</p>${moverTable(H.fallers)}</div>
+  </div>`;
+}
+
 const ROUTES = [
   [/^#?\/?$/, viewDashboard], [/^#\/partners$/, viewPartners], [/^#\/trade$/, viewTrade],
   [/^#\/team(?:\/(\d+))?$/, viewTeam], [/^#\/players$/, viewPlayers], [/^#\/history$/, viewHistory],
@@ -2817,7 +2895,7 @@ const ROUTES = [
   [/^#\/waivers$/, viewWaivers], [/^#\/waivers\/(\d+)$/, viewWaiverTeam],
   [/^#\/rankings$/, viewRankings], [/^#\/records$/, viewRecords], [/^#\/season$/, viewSeason], [/^#\/player\/(\w+)$/, viewPlayer], [/^#\/draftprep$/, viewDraftPrep], [/^#\/pickups$/, viewPickups], [/^#\/breakouts$/, viewBreakouts],
   [/^#\/deadline$/, viewDeadline], [/^#\/buylow$/, viewBuyLow], [/^#\/future$/, viewFuture], [/^#\/prices$/, viewPrices],
-  [/^#\/recap(?:\/(\d+))?$/, viewRecap], [/^#\/roster$/, viewRoster], [/^#\/hitrates$/, viewHitRates], [/^#\/calendar$/, viewCalendar], [/^#\/lineup(?:\/(\d+))?$/, viewLineup], [/^#\/plan$/, viewPlan],
+  [/^#\/recap(?:\/(\d+))?$/, viewRecap], [/^#\/roster$/, viewRoster], [/^#\/hitrates$/, viewHitRates], [/^#\/calendar$/, viewCalendar], [/^#\/lineup(?:\/(\d+))?$/, viewLineup], [/^#\/secondhalf(?:\/(\d+))?$/, viewSecondHalf], [/^#\/plan$/, viewPlan],
   [/^#\/settings$/, viewSettings],
 ];
 async function route() {

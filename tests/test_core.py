@@ -397,3 +397,30 @@ def test_lineup_scoring_and_slots():
     assert {p["id"] for p in best.values()} == {"1", "2", "3", "4", "5"}  # the 12-point RB takes FLEX over the 3-point WR
     kept = lineup._best(["QB", "RB", "WR", "TE", "FLEX"], pool, {4: pool[5]}, key=lambda p: p["proj"])
     assert kept[4]["id"] == "6"                                            # a locked starter stays put
+
+
+def test_second_half_model():
+    from app import secondhalf as h
+    assert h._coef("WR", 8) == h.COEF[8]["WR"]
+    mid = h._coef("QB", 6)                                                 # linear between the fitted weeks
+    assert h.COEF[5]["QB"][1] < mid[1] < h.COEF[8]["QB"][1]
+    u = lambda ppg, wo: {"games": 7, "ppg": ppg, "ppg_l3": ppg, "wo_pg": wo, "wo_l3": wo}
+    busy, lucky = h.model_ppg("WR", u(10, 14), 7), h.model_ppg("WR", u(10, 5), 7)
+    assert busy > 10 > lucky                                               # volume beats points
+    assert h.edge("WR", u(10, 14), 7, busy) > 0 > h.edge("WR", u(10, 5), 7, lucky)
+    assert abs(h.edge("WR", u(10, 40), 7, h.model_ppg("WR", u(10, 40), 7))) == h.EDGE_CAP
+    assert h.edge("QB", u(25, 35), 7, h.model_ppg("QB", u(25, 35), 7)) == 0  # QBs: no volume signal
+    assert h.model_ppg("QB", u(25, 35), 7) < 25                            # hot QB starts regress
+    assert h.model_ppg("WR", {**u(10, 14), "games": 2}, 7) is None         # too few games
+    soft = h.model_ppg("RB", u(15, 18), 7, sched=1.08)
+    assert soft > h.model_ppg("RB", u(15, 18), 7, sched=1.0)               # schedule counts for RBs only
+    assert h.model_ppg("WR", u(10, 14), 7, sched=1.08) == busy
+
+
+def test_second_half_edge_only_in_real_gain():
+    from app.trade import context_value
+    a = {"kind": "player", "pos": "WR", "age": 25, "value": 3000, "redraft": 4000, "h2": {"edge": 0.15}}
+    team = {"w": 0.9}
+    plain = context_value({**a, "h2": None}, team)
+    assert context_value(a, team) > plain                                  # counts in the team's real gain
+    assert context_value(a, team, {}) == plain                             # not in what a manager perceives

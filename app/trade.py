@@ -33,7 +33,13 @@ def context_value(a: dict, team: dict, tend: dict | None = None) -> float:
             v *= 1 + 0.10 * tend["pick_affinity"] * tend["confidence"]
         return v
     alpha = 0.05 + 0.45 * w  # share of win-now value
-    v = (1 - alpha) * a["value"] + alpha * a["redraft"]
+    redraft = a["redraft"]
+    if tend is None and a.get("h2"):
+        # Second-half outlook (secondhalf.py): where usage says a player will score more or
+        # less than his points so far suggest. It counts in a team's real gain, not in what
+        # a manager perceives (calls with tendencies), since managers trade on market prices.
+        redraft *= 1 + a["h2"]["edge"]
+    v = (1 - alpha) * a["value"] + alpha * redraft
     if a.get("age") is not None and a["pos"] in SELL_AGE:
         # Rebuilders discount players who will be past their position's age cliff by the
         # time the team is ready to compete: ramps from 2 yrs before the cliff to 2 yrs after.

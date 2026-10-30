@@ -22,6 +22,7 @@ from __future__ import annotations
 import datetime as dt
 
 from . import counter, season, sleeper
+from .secondhalf import MOVE
 from .trade import context_value
 
 BUYER_ODDS = 25.0
@@ -77,6 +78,11 @@ def analyze(lg, sim: dict) -> dict:
             reasons.append(o["why"])
         if a["redraft"] > a["value"]:
             reasons.append(f"Worth more to win now ({a['redraft']:,} win-now) than in dynasty ({a['value']:,}), which is what contenders pay for.")
+        h = a.get("h2") or {}
+        if (h.get("change") or 0) <= -MOVE:
+            reasons.append(f"Second half projects {h['rate']:.1f} a game, below his {h['so_far']:.1f} so far: sell before it shows.")
+        elif (h.get("change") or 0) >= MOVE:
+            reasons.append(f"Second half projects {h['rate']:.1f} a game, up from {h['so_far']:.1f}: a contender gets a riser.")
         needy = [x["manager"] for x in offers[:3] if x["need"] >= 0.5]
         if needy:
             reasons.append(f"{', '.join(needy)} {'needs' if len(needy) == 1 else 'need'} {a['pos']} help.")

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from itertools import combinations
 
+from .secondhalf import MOVE
 from .trade import acceptance, context_value, evaluate, market_view, perceived_gain, roster_cost_fn
 from . import calcfit
 from .tendencies import package_value
@@ -109,6 +110,14 @@ def _why(me, them, tend, give, get) -> list[str]:
             top = o.get("notes") or []
             why.append(f"Buy before a breakout: {a['name']} scores {a['breakout']}"
                        + (f" ({top[0]['text'][0].lower() + top[0]['text'][1:]})." if top else "."))
+    for a in get:
+        h = a.get("h2") or {}
+        if me["w"] >= 0.5 and (h.get("change") or 0) >= MOVE:
+            why.append(f"Second half: {a['name']} projects {h['rate']:.1f} a game from here, up from {h['so_far']:.1f}.")
+    for a in give:
+        h = a.get("h2") or {}
+        if them["w"] >= 0.5 and (h.get("change") or 0) <= -MOVE:
+            why.append(f"Sell high: {a['name']} projects {h['rate']:.1f} a game from here, below his {h['so_far']:.1f} so far.")
     young = [a["name"] for a in get if a["kind"] == "player" and (a.get("age") or 99) <= 24.5]
     picks = [a["name"] for a in get if a["kind"] == "pick"]
     if me["window"] == "rebuild" and (young or picks):

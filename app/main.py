@@ -13,7 +13,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import (agenda, buylow, checks, config, counter, deadline, draftprep, drafts, feed, future, health, lineup, market, opportunity,
-               pickhistory, pickups, pitch, plan, rankings, recap, records, retro, roster, season, seasonal, store, suggest, target, trade, waivers)
+               pickhistory, pickups, pitch, plan, rankings, recap, records, retro, roster, season, seasonal, secondhalf, store, suggest, target, trade,
+               waivers)
 from .config import ROOT
 from .league import League
 from .values import SOURCE_LABELS
@@ -417,6 +418,14 @@ def rookie_hits():
     if lg.rookies is None:
         raise HTTPException(503, f"Couldn't load rookie history: {lg.rookies_error}")
     return _memo("rookies", lg, lambda: _clean(lg.rookies))
+
+
+@app.get("/api/secondhalf")
+def second_half(roster_id: int | None = None):
+    """Second-half outlook and win-now trade targets for a team (default: yours)."""
+    lg = league()
+    return _memo(f"secondhalf:{roster_id}", lg,
+                 lambda: _clean({**secondhalf.targets(lg, roster_id), "deadline": deadline._deadline(lg)}))
 
 
 @app.get("/api/lineup")
