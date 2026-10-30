@@ -1815,7 +1815,7 @@ async function viewDraftPrep() {
   const lean = h => ["QB", "RB", "WR", "TE"].filter(k => h.pos_bias[k] >= 0.15).map(k => posBadge(k)).join(" ") || '<span class="muted">balanced</span>';
   return `<div class="card"><h1>Upcoming draft <span class="muted">· ${D.season} rookie draft</span></h1>
     <p class="muted">${D.projected ? `Pick slots come from the <a href="#/season">season simulation</a>: non-playoff teams pick by ${ruleTxt(D.draft_rule)} (the rule this league used last year), then playoff teams, champion last.` : "Slots for this draft aren't projected yet."}
-      ${D.snake ? "Snake draft." : "Linear draft: the same slot every round."} Pick values use the blended market value for an early, mid or late pick in that round.</p>
+      ${D.snake ? "Snake draft." : "Linear draft: the same slot every round."} Each pick is valued at the market price for every slot it could land in, weighted by the chance it lands there.</p>
     <div class="tiles">
       <div class="tile"><div class="k">Your picks</div><div class="v">${mine.length}</div><div class="d muted">${mine.filter(p => p.round === 1).length} first-rounder(s)</div></div>
       <div class="tile"><div class="k">Pick capital</div><div class="v">${myCap ? compact(myCap.value) : "0"}</div><div class="d muted">${capRank ? `#${capRank} of ${D.capital.length} for this draft` : "no picks"}</div></div>
@@ -1824,10 +1824,13 @@ async function viewDraftPrep() {
     </div></div>
   <div class="grid g2">
     <div class="card"><h2>Your picks</h2><table>
-      <thead><tr><th>Projected</th><th>Original team</th><th class="num">${hint("Likely slots", HELP.pickRange)}</th><th class="num">Value</th></tr></thead>
+      <thead><tr><th>Projected</th><th>Original team</th><th class="num">${hint("Likely slots", HELP.pickRange)}</th><th class="num">Value</th><th class="num">${hint("Hit / bust", HELP.hitDef)}</th><th class="num">${hint("Value kept", HELP.valueKept)}</th></tr></thead>
       <tbody>${mine.map(p => `<tr><td><b>${esc(p.label)}</b></td><td>${esc(p.orig || "")}${p.orig_rid === me ? ' <span class="muted small">(own)</span>' : ""}</td>
-        <td class="num">${p.range ? (p.range[0] === p.range[1] ? p.range[0] : `${p.range[0]}–${p.range[1]}`) : "–"}</td><td class="num">${fmt(p.value)}</td></tr>`).join("") || '<tr><td colspan="4" class="muted">You have no picks in this draft.</td></tr>'}</tbody>
-    </table></div>
+        <td class="num">${p.range ? (p.range[0] === p.range[1] ? p.range[0] : `${p.range[0]}–${p.range[1]}`) : "–"}</td><td class="num">${fmt(p.value)}</td>
+        <td class="num">${p.hit != null ? `${p.hit}% <span class="muted small">/ ${p.bust}%</span>` : "–"}</td>
+        <td class="num ${p.kept == null ? "" : p.kept >= 115 ? "delta-pos" : p.kept <= 85 ? "delta-neg" : ""}">${p.kept != null ? p.kept + "%" : "–"}</td></tr>`).join("") || '<tr><td colspan="6" class="muted">You have no picks in this draft.</td></tr>'}</tbody>
+    </table><p class="muted small">Values are priced across every slot the season simulation says a pick can land in. Hit / bust: how often picks there became a starter, or never even a flex player, in past classes.
+      Value kept: what those players were worth three years later vs. draft day; above 100% means picks there have been underpriced. <a href="#/hitrates">Hit rates →</a></p></div>
     <div class="card"><h2>Pick capital for this draft</h2><div id="dp-cap"></div>
       <p class="muted small">Total value of each team's picks in the ${D.season} draft, at their projected slots.</p></div>
   </div>
@@ -2357,6 +2360,154 @@ async function viewRoster() {
   </div>`;
 }
 
+// ---------------------------------------------------------------- rookie hit rates
+const OUTCOME = {
+  elite: { label: "Elite", cls: "acc-Likely" }, starter: { label: "Starter", cls: "acc-Likely" },
+  flex: { label: "Flex", cls: "acc-Possible" }, bust: { label: "Bust", cls: "acc-Unlikely" },
+};
+const OUTCOME_KEYS = ["elite", "starter", "flex", "bust"];
+const POS_SERIES = { QB: 1, RB: 2, WR: 3, TE: 4 };
+const ord = n => `${n}${["th", "st", "nd", "rd"][(n % 100 > 10 && n % 100 < 14) ? 0 : n % 10] || "th"}`;
+Object.assign(HELP, {
+  hitDef: "Hit = at least one starter season (elite or starter) in his first 3 NFL seasons, by PPR points per game with at least 7 games. Bust = not even one flex-level season.",
+  valueHeld: "Total dynasty value of all of a position's rookie picks, k years after their draft, as a % of their total on draft day. Above 100 = the picks as a group gained value (the hits gained more than the busts lost).",
+  stillStarting: "Of players at that position who had at least one starter season, the share who had a starter season in that year of their career.",
+  valueKept: "What the players taken at those slots were worth three years later, as a % of what they were worth on draft day (both DynastyProcess). Above 100% = the market priced those picks too low.",
+});
+
+// Plain-language takeaways from the slot data (computed, so they follow the data).
+function slotTakeaways(H) {
+  const c = H.curves, n = H.teams, t = H.slot_tiers;
+  const avg = (xs) => xs.reduce((s, x) => s + x, 0) / xs.length;
+  const top = avg(c.hit.slice(0, 3)), rest1 = avg(c.hit.slice(3, n));
+  const out = [`The biggest divide is the top of the 1st round: picks 1.01–1.03 have hit ${Math.round(top)}% of the time, the rest of the 1st ${Math.round(rest1)}%.`];
+  for (let r = 1; r <= H.rounds; r++) {
+    const e = t.find(x => x.round === r && x.tier === "early"), l = t.find(x => x.round === r && x.tier === "late");
+    if (!e || !l) continue;
+    const ek = Math.round(e.payoff * 100), lk = Math.round(l.payoff * 100), name = `${ord(r)}s`;
+    const odds = `${Math.round(l.hit)}% hit vs. ${Math.round(e.hit)}% for early ${name}`;
+    if (Math.abs(lk - ek) < 20 && Math.abs(e.hit - l.hit) < 12) out.push(`In the ${ord(r)} round the slot barely matters (${odds}; ${lk}% vs. ${ek}% of value kept).`);
+    else if (lk > ek) out.push(`Late ${name} have been the better value for the price: ${l.hit < e.hit - 5 ? "less likely to hit" : "about as likely to hit"} (${odds}), but they kept ${lk}% of their value vs. ${ek}%${l.price_now < e.price_now ? ` and cost less (${fmt(l.price_now)} vs. ${fmt(e.price_now)} today)` : ""}.`);
+    else out.push(`Early ${name} have held up better than late ones: ${ek}% of value kept vs. ${lk}% (${Math.round(e.hit)}% vs. ${Math.round(l.hit)}% hit).`);
+  }
+  return out.join(" ");
+}
+
+function hitThresholds(H) {
+  const t = H.thresholds;
+  const f = k => ["QB", "RB", "WR", "TE"].map(p => `${p}${t[k][p]}`).join(", ");
+  return `Elite: top ${f("elite")}. Starter: ${f("starter")}. Flex: ${f("flex")} (positional rank by PPR points per game, ${H.min_games}+ games).`;
+}
+
+async function viewHitRates() {
+  const H = await cachedApi("hits", "/api/rookie-hits");
+  setTimeout(() => drawHitRates(H), 0);
+  const rows = x => `<td class="num">${x.n}</td>${OUTCOME_KEYS.map(k => `<td class="num">${x.n ? Math.round(x[k]) + "%" : "–"}</td>`).join("")}<td class="num"><b>${x.n ? Math.round(x.hit) + "%" : "–"}</b></td>`;
+  const head = `<th class="num">Picks</th>${OUTCOME_KEYS.map(k => `<th class="num">${OUTCOME[k].label}</th>`).join("")}<th class="num">${hint("Hit", HELP.hitDef)}</th>`;
+  const nm = r => `${ord(r)} round`;
+  const L = H.longevity.positions;
+  const byClass = {};
+  for (const p of H.picks) (byClass[p.cls] ||= []).push(p);
+  const finish = p => p.best ? `${p.pos}${p.best} in ${p.best_season}` : "–";
+  return `<div class="card"><h1>Rookie pick hit rates</h1>
+    <p class="muted">How often rookie picks turn into starters, from the ${H.complete_classes[0]}–${H.complete_classes[H.complete_classes.length - 1]} rookie classes (the ones with ${H.window} full NFL seasons to judge).
+      Each class is ranked by DynastyProcess's ${H.superflex ? "superflex" : "1QB"} values just before rookie-draft season, and the top ${H.teams * H.rounds} become picks 1.01–${H.rounds}.${String(H.teams).padStart(2, "0")} for a ${H.teams}-team league:
+      a stand-in for where they actually went. Outcomes are judged over each player's first ${H.window} seasons. ${hint("Definitions", hitThresholds(H))}</p>
+    <div class="tiles">${H.by_round.map(r => `<div class="tile"><div class="k">${nm(r.round)} pick</div><div class="v">${Math.round(r.hit)}% hit</div>
+      <div class="d muted">${Math.round(r.bust)}% bust · ${Math.round(r.elite)}% elite · ${r.n} picks</div></div>`).join("")}</div>
+    <p class="muted small">About ${H.by_round[0].n} picks per round, so each rate is good to roughly ±12 points.</p></div>
+  <div class="grid g2">
+    <div class="card"><h2>By round and slot</h2><div class="hr-legend-o"></div><div id="hr-round"></div>
+      <table data-nosort><thead><tr><th>Picks</th>${head}</tr></thead><tbody>
+        ${H.by_round.map(r => `<tr><td><b>${nm(r.round)}</b></td>${rows(r)}</tr>${r.tiers.map(t => `<tr><td class="muted">&nbsp;&nbsp;${t.label}</td>${rows(t)}</tr>`).join("")}`).join("")}
+      </tbody></table></div>
+    <div class="card"><h2>By position</h2><div class="hr-legend-o"></div><div id="hr-pos"></div>
+      <table data-nosort><thead><tr><th>Position</th><th class="num">Picks</th>${H.by_round.map(r => `<th class="num">${nm(r.round)} hit</th>`).join("")}<th class="num">All: hit</th><th class="num">All: bust</th></tr></thead><tbody>
+        ${H.by_pos.map(p => `<tr><td>${posBadge(p.pos)}</td><td class="num">${p.n}</td>
+          ${p.rounds.map(r => `<td class="num">${r.n ? `${Math.round(r.hit)}% <span class="muted small">of ${r.n}</span>` : "–"}</td>`).join("")}
+          <td class="num"><b>${Math.round(p.hit)}%</b></td><td class="num">${Math.round(p.bust)}%</td></tr>`).join("")}
+      </tbody></table>
+      <p class="muted small">Position samples are small (tight ends especially), so read across rounds rather than at single cells.</p></div>
+  </div>
+  <div class="card"><h2>Early or late: does the slot matter?</h2>
+    <p>${slotTakeaways(H)}</p>
+    <div class="grid g2">
+      <div><h3>Hit and bust rate by slot</h3><div id="hr-slot-legend"></div><div id="hr-slot"></div>
+        <p class="muted small">Smoothed across neighboring slots (each slot alone has only ${H.complete_classes.length} picks).</p></div>
+      <div><h3>${hint("Value kept after 3 years", HELP.valueKept)}</h3><div id="hr-kept"></div>
+        <p class="muted small">Above 0: picks there have been underpriced on draft day (buy). Below: overpriced (sell before the draft).</p></div>
+    </div>
+    <div class="scroll"><table data-nosort><thead><tr><th>Picks</th><th class="num">Hit</th><th class="num">Bust</th><th class="num">Draft day</th><th class="num">3 years later (avg.)</th>
+      <th class="num">${hint("Value kept", HELP.valueKept)}</th><th class="num">Price today</th></tr></thead>
+      <tbody>${H.slot_tiers.map(t => `<tr><td><b>${t.label}</b></td><td class="num">${Math.round(t.hit)}%</td><td class="num">${Math.round(t.bust)}%</td>
+        <td class="num">${fmt(t.draft_day)}</td><td class="num">${fmt(t.mean_later)}</td>
+        <td class="num ${t.payoff >= 1.15 ? "delta-pos" : t.payoff <= 0.85 ? "delta-neg" : ""}">${Math.round(t.payoff * 100)}%</td><td class="num">${fmt(t.price_now)}</td></tr>`).join("")}</tbody></table></div>
+    <p class="muted small">Draft day and 3 years later are what the players taken there were worth (average), in the app's value scale. Price today is the market's current price for a next-year pick in that range.
+      Your own picks are priced from the season simulation's odds of landing in each slot; see <a href="#/draftprep">Upcoming draft</a>.</p></div>
+  <div class="card"><h2>How long value lasts</h2>
+    <div class="grid g2">
+      <div><h3>${hint("Still a starter", HELP.stillStarting)}, by year of career</h3><div id="hr-legend-a"></div><div id="hr-long"></div>
+        <p class="muted small">NFL draft picks ${H.longevity.from}–${H.longevity.to} who had at least one starter season, followed for ${H.longevity.years} seasons.</p></div>
+      <div><h3>${hint("Dynasty value kept", HELP.valueHeld)}, years after the draft</h3><div id="hr-legend-b"></div><div id="hr-value"></div>
+        <p class="muted small">Rookie picks from the ${H.classes[0]}+ classes; later years rest on fewer classes (${H.value_curve.reduce((s, p) => s + p.n[H.value_years], 0)} picks reach year ${H.value_years}).</p></div>
+    </div>
+    <table data-nosort><thead><tr><th>Position</th><th class="num">Players who hit</th><th class="num">Starter seasons (typical)</th><th class="num">Average</th><th class="num">Best year</th><th class="num">Half as many starting by</th></tr></thead>
+      <tbody>${L.map(p => `<tr><td>${posBadge(p.pos)}</td><td class="num">${p.n}</td><td class="num">${p.median_seasons}</td><td class="num">${p.mean_seasons}</td>
+        <td class="num">year ${p.peak_year}</td><td class="num">${p.half_life ? `year ${p.half_life}` : `after year ${H.longevity.years}`}</td></tr>`).join("")}</tbody></table>
+    <p class="small">Running backs start fast and fade fast; receivers and quarterbacks keep producing for years. For a rebuild, a rookie RB's best seasons may come before your window opens, while a WR or QB's are still ahead.</p></div>
+  <div class="card"><h2>Every pick</h2><p class="muted small">Ranked by draft-day value within each class. Classes with fewer than ${H.window} seasons are "so far".</p>
+    ${H.classes.slice().reverse().map(c => {
+      const ps = byClass[c] || [], done = ps[0]?.complete;
+      const seasons = ps[0]?.seasons || 0;
+      const tally = OUTCOME_KEYS.filter(k => done || k !== "bust").map(k => `${ps.filter(p => p.outcome === k).length} ${OUTCOME[k].label.toLowerCase()}`).join(" · ");
+      return `<details><summary><b>${c}</b> <span class="muted small">${done ? tally : seasons ? `${seasons} season${seasons === 1 ? "" : "s"} so far · ${tally}` : "no NFL seasons yet"}</span></summary>
+        <div class="scroll"><table data-nosort><thead><tr><th>Pick</th><th>Player</th><th>Outcome</th><th>Best finish</th><th class="num">Value now</th></tr></thead><tbody>
+        ${ps.map(p => `<tr><td>${p.label}</td><td>${posBadge(p.pos)} ${p.sleeper_id ? playerLink(p.sleeper_id, p.name) : esc(p.name)}</td>
+          <td>${p.seasons ? `<span class="badge ${OUTCOME[p.outcome].cls}">${OUTCOME[p.outcome].label}</span>${done ? "" : ' <span class="muted small">so far</span>'}` : '<span class="muted small">no seasons yet</span>'}</td>
+          <td class="small">${finish(p)}</td><td class="num">${p.value_now ? fmt(p.value_now) : "–"}</td></tr>`).join("")}</tbody></table></div></details>`;
+    }).join("")}</div>`;
+}
+
+function drawHitRates(H) {
+  const colors = OUTCOME_KEYS.map((_, i) => `var(--age-${4 - i})`), onColors = OUTCOME_KEYS.map((_, i) => `var(--on-age-${4 - i})`);
+  const labels = Object.fromEntries(OUTCOME_KEYS.map(k => [k, OUTCOME[k].label]));
+  const bar = x => ({ parts: Object.fromEntries(OUTCOME_KEYS.map(k => [k, x[k] || 0])), tip: Object.fromEntries(OUTCOME_KEYS.map(k => [k, `${x.counts[k]} of ${x.n} picks`])) });
+  const drawRound = () => $("#hr-round") && stackedBars($("#hr-round"), {
+    rows: H.by_round.flatMap(r => [{ label: `${ord(r.round)} round`, ...bar(r) }, ...r.tiers.map(t => ({ label: t.label, ...bar(t) }))]),
+    keys: OUTCOME_KEYS, labels, max: 100, colors, onColors, title: "Rookie pick outcomes by round and slot" });
+  const drawPos = () => $("#hr-pos") && stackedBars($("#hr-pos"), {
+    rows: H.by_pos.map(p => ({ label: p.pos, ...bar(p) })), keys: OUTCOME_KEYS, labels, max: 100, colors, onColors, title: "Rookie pick outcomes by position" });
+  const line = (id, values, n, xl, title) => {
+    const host = $(id);
+    if (!host) return;
+    const dates = Array.from({ length: n }, (_, k) => `${2000 + k}-01-01`);
+    lineChart(host, { dates, xLabels: xl, title, height: 240, format: v => Math.round(v) + "%",
+      series: values.map(v => ({ id: v.pos, label: v.pos, values: v.vals, highlight: true, color: `var(--series-${POS_SERIES[v.pos]})` })) });
+  };
+  const leg = H.by_pos.map(p => ({ label: p.pos, color: `var(--series-${POS_SERIES[p.pos]})` }));
+  ["#hr-legend-a", "#hr-legend-b"].forEach(id => { if ($(id)) $(id).innerHTML = legendHTML(leg); });
+  $$(".hr-legend-o").forEach(el => (el.innerHTML = legendHTML(OUTCOME_KEYS.map((k, i) => ({ label: OUTCOME[k].label, color: colors[i], rect: true })))));
+  const drawLong = () => line("#hr-long", H.longevity.positions.map(p => ({ pos: p.pos, vals: p.share })), H.longevity.years,
+    Array.from({ length: H.longevity.years }, (_, k) => `Yr ${k + 1}`), "Share still starting by year of career");
+  const drawValue = () => line("#hr-value", H.value_curve.map(p => ({ pos: p.pos, vals: p.held })), H.value_years + 1,
+    Array.from({ length: H.value_years + 1 }, (_, k) => k ? `Yr ${k}` : "Draft"), "Dynasty value kept by years after the draft");
+  const slots = c => Array.from({ length: c.hit.length }, (_, i) => `${Math.floor(i / H.teams) + 1}.${String(i % H.teams + 1).padStart(2, "0")}`);
+  if ($("#hr-slot-legend")) $("#hr-slot-legend").innerHTML = legendHTML([{ label: "Hit", color: "var(--series-1)" }, { label: "Bust", color: "var(--series-2)" }]);
+  const drawSlot = () => {
+    const host = $("#hr-slot");
+    if (!host) return;
+    const xl = slots(H.curves);
+    lineChart(host, { dates: xl.map((_, k) => `${2000 + k}-01-01`), xLabels: xl, height: 240, format: v => Math.round(v) + "%", title: "Hit and bust rate by draft slot",
+      series: [{ id: "hit", label: "Hit", values: H.curves.hit, highlight: true, color: "var(--series-1)" },
+               { id: "bust", label: "Bust", values: H.curves.bust, highlight: true, color: "var(--series-2)" }] });
+  };
+  const drawKept = () => $("#hr-kept") && divergingColumns($("#hr-kept"), { height: 220, xLabel: "Picks", title: "Value kept after 3 years by slot range",
+    items: H.slot_tiers.map(t => ({ label: t.label.replace(/–\d\./, "–"), value: Math.round((t.payoff - 1) * 100),
+      tip: [{ color: t.payoff >= 1 ? "var(--div-s2)" : "var(--div-n2)", value: `${Math.round(t.payoff * 100)}% kept`, label: `${t.label} · ${t.n_value} picks` }] })) });
+  [drawRound, drawPos, drawLong, drawValue, drawSlot, drawKept].forEach(f => f());
+  onResize(drawRound, drawPos, drawLong, drawValue, drawSlot, drawKept);
+}
+
 // ---------------------------------------------------------------- navigation
 // Pages are grouped into sections by what you're doing. URLs are unchanged, so old links work.
 const ICONS = {
@@ -2371,7 +2522,7 @@ const SECTIONS = [
   { id: "league", label: "League", pages: [["#/rankings", "Rankings"], ["#/season", "Playoff odds"], ["#/future", "Timeline"], ["#/team", "Teams"], ["#/recap", "Weekly recap"], ["#/records", "Record book"]] },
   { id: "trades", label: "Trades", pages: [["#/partners", "Find trades"], ["#/trade", "Evaluate"], ["#/deadline", "Deadline"], ["#/prices", "League prices"], ["#/history", "Trade history"]] },
   { id: "players", label: "Players", pages: [["#/players", "Rostered"], ["#/breakouts", "Breakouts"], ["#/buylow", "Buy low"], ["#/pickups", "Free agents"], ["#/waivers", "Pickup history"]] },
-  { id: "draft", label: "Draft", pages: [["#/draftprep", "Upcoming draft"], ["#/roster", "Roster room"], ["#/drafts", "Past drafts"]] },
+  { id: "draft", label: "Draft", pages: [["#/draftprep", "Upcoming draft"], ["#/hitrates", "Hit rates"], ["#/roster", "Roster room"], ["#/drafts", "Past drafts"]] },
 ];
 const lastPage = {};  // section id -> last page visited there, so a section tab returns you to it
 
@@ -2404,7 +2555,7 @@ const ROUTES = [
   [/^#\/waivers$/, viewWaivers], [/^#\/waivers\/(\d+)$/, viewWaiverTeam],
   [/^#\/rankings$/, viewRankings], [/^#\/records$/, viewRecords], [/^#\/season$/, viewSeason], [/^#\/player\/(\w+)$/, viewPlayer], [/^#\/draftprep$/, viewDraftPrep], [/^#\/pickups$/, viewPickups], [/^#\/breakouts$/, viewBreakouts],
   [/^#\/deadline$/, viewDeadline], [/^#\/buylow$/, viewBuyLow], [/^#\/future$/, viewFuture], [/^#\/prices$/, viewPrices],
-  [/^#\/recap(?:\/(\d+))?$/, viewRecap], [/^#\/roster$/, viewRoster],
+  [/^#\/recap(?:\/(\d+))?$/, viewRecap], [/^#\/roster$/, viewRoster], [/^#\/hitrates$/, viewHitRates],
   [/^#\/settings$/, viewSettings],
 ];
 async function route() {

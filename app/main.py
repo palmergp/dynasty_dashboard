@@ -317,7 +317,7 @@ def backtest_report():
 
 
 def _season(lg):
-    return _memo("season", lg, lambda: season.simulate(lg))
+    return lg.sim or _memo("season", lg, lambda: season.simulate(lg))
 
 
 @app.get("/api/season")
@@ -388,6 +388,16 @@ def model_checks():
 def weekly_recap(week: int | None = None):
     lg = league()
     return _memo(f"recap:{week}", lg, lambda: _clean(recap.analyze(lg, week)))
+
+
+@app.get("/api/rookie-hits")
+def rookie_hits():
+    """Rookie pick hit rates by round and position, and how long value lasts by position.
+    The first run downloads about 26 seasons of nflverse stats and DP's July value files."""
+    lg = league()
+    if lg.rookies is None:
+        raise HTTPException(503, f"Couldn't load rookie history: {lg.rookies_error}")
+    return _memo("rookies", lg, lambda: _clean(lg.rookies))
 
 
 @app.get("/api/roster-room")

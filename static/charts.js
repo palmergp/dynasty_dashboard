@@ -78,7 +78,16 @@ function lineChart(host, opts) {
   const months = [];
   for (let d = new Date(t0); d <= new Date(t1); d.setMonth(d.getMonth() + 1)) months.push(new Date(d.getFullYear(), d.getMonth(), 1));
   const every = Math.max(1, Math.ceil(months.length / Math.max(2, Math.floor(iw / 90))));
-  months.filter((_, i) => !opts.hideMonths && i % every === 0).forEach(d => {
+  // opts.xLabels: one label per point (e.g. "Yr 1") instead of month ticks.
+  if (opts.xLabels) {
+    const step = Math.max(1, Math.ceil(ts.length / Math.max(2, Math.floor(iw / 44))));
+    ts.forEach((t, i) => {
+      if (i % step) return;
+      const lab = svgEl("text", { x: x(t), y: H - 8, "text-anchor": "middle", "font-size": 11, fill: "var(--chart-muted)" });
+      lab.textContent = opts.xLabels[i]; svg.append(lab);
+    });
+  }
+  months.filter((_, i) => !opts.hideMonths && !opts.xLabels && i % every === 0).forEach(d => {
     const t = d.getTime(); if (t < t0) return;
     const lab = svgEl("text", { x: x(t), y: H - 8, "text-anchor": "middle", "font-size": 11, fill: "var(--chart-muted)" });
     lab.textContent = `${MONTHS[d.getMonth()]} '${String(d.getFullYear()).slice(2)}`; svg.append(lab);
@@ -141,7 +150,7 @@ function lineChart(host, opts) {
       .sort((a, b) => (b.highlight - a.highlight) || (b.values[i] - a.values[i]))
       .map(s => ({ color: s.highlight ? s.color : "var(--context-line)", value: format(s.values[i]), label: s.label, hl: s.highlight }));
     if (!rows.length) { tip.hidden = true; return; }
-    tipRows(tip, dateLabel(dates[i]), rows);
+    tipRows(tip, opts.xLabels ? opts.xLabels[i] : dateLabel(dates[i]), rows);
     const hy = Math.min(...series.filter(s => s.highlight && s.values[i] != null).map(s => y(s.values[i])), m.t + ih / 2);
     placeTip(tip, host, px, hy);
   };

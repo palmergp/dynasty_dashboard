@@ -317,3 +317,35 @@ def test_roster_room_taxi_and_cuts():
 def test_recap_ordinals():
     from app.recap import _ordinal
     assert [_ordinal(n) for n in (1, 2, 3, 4, 11, 12, 13, 21, 22, 101)] == ["1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "101st"]
+
+
+def test_rookie_outcomes_use_best_finish_in_first_three_seasons():
+    from app.rookies import _outcome, _rates, _tier_label, thresholds
+    th = thresholds(superflex=True)
+    p = {"cls": 2021, "gsis": "x", "pos": "WR"}
+    finish = {("x", 2021): 40, ("x", 2022): 20, ("x", 2024): 3}  # year 4 doesn't count
+    assert _outcome(p, finish, th, 2025)[:2] == ("starter", 20)
+    assert _outcome({**p, "pos": "TE"}, {("x", 2022): 15}, th, 2025)[0] == "flex"
+    assert _outcome({**p, "pos": "QB"}, {("x", 2021): 20}, th, 2025)[0] == "starter"          # QB20 starts in superflex
+    assert _outcome({**p, "pos": "QB"}, {("x", 2021): 20}, thresholds(False), 2025)[0] == "flex"  # but not in 1QB
+    assert _outcome(p, {}, th, 2025)[0] == "bust"
+    r = _rates([{"outcome": o} for o in ("elite", "starter", "bust", "bust")])
+    assert r["hit"] == 50.0 and r["bust"] == 50.0 and r["n"] == 4
+    assert _tier_label(1, "early", 12) == "1.01–1.04" and _tier_label(2, "late", 12) == "2.09–2.12"
+
+
+def test_pick_slot_pricing():
+    from types import SimpleNamespace
+    from app import pickvalue
+    price = {(1, "early"): 6000, (1, "mid"): 4000, (1, "late"): 3000, (2, "early"): 2000, (2, "mid"): 1800, (2, "late"): 1600}
+    values = SimpleNamespace(pick=lambda s, r, t: {"value": price[(r, t)], "market": price[(r, t)]})
+    lg = SimpleNamespace(teams={i: {} for i in range(12)}, draft_rounds=2, values=values)
+    val, _ = pickvalue.market_curve(lg, 2027)
+    assert len(val) == 24
+    assert val[0] > 6000 > val[3]                       # 1.01 above the early-1st price, 1.04 below
+    assert abs(sum(val[0:4]) / 4 - 6000) < 1             # the tier still averages to its price
+    assert all(a >= b for a, b in zip(val, val[1:]))      # never cheaper to pick earlier
+    assert pickvalue.slot_in_round(2, 1, 12, True) == 12 and pickvalue.slot_in_round(2, 1, 12, False) == 1
+    d = pickvalue.future_dist(rank=12, n=12, years_out=1)  # worst team: picks first
+    assert abs(sum(d) - 1) < 1e-9 and d.index(max(d)) == 0 and min(d) > 0
+    assert pickvalue._range([0, 0, 1.0] + [0] * 9) == (3, 3)

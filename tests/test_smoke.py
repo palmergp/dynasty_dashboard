@@ -30,14 +30,14 @@ ROUTES = {
     "#/breakouts": "Breakout watch", "#/drafts": "<h1>Past drafts", "#/waivers": "<h1>Pickup history",
     "#/history": "<h1>Trade history", "#/records": "Record book", "#/settings": "Valuation",
     "#/deadline": "<h1>Deadline sell list", "#/buylow": "<h1>Buy low", "#/future": "<h1>Rebuild timeline", "#/prices": "<h1>League prices",
-    "#/recap": "<h1>Weekly recap", "#/roster": "<h1>Roster room",
+    "#/recap": "<h1>Weekly recap", "#/roster": "<h1>Roster room", "#/hitrates": "<h1>Rookie pick hit rates",
 }
 # Cards that load after the page renders: route -> text that appears once they've loaded.
 LATE = {"#/future": "Rank after", "#/prices": "Avg. result on KTC", "#/deadline": "Vs. similar players", "#/buylow": "Vs. similar players"}
 API = ["overview", "players", "picks", "suggestions", "drafts", "rankings", "waivers", "pickups", "breakouts",
        "backtest", "season", "draft-prep", "trade-review", "records", "trades", "feed", "status", "team/1",
        "deadline", "buylow", "future", "pick-timing", "league-prices", "phone",
-       "target", "calculators", "checks", "recap", "roster-room"]
+       "target", "calculators", "checks", "recap", "roster-room", "rookie-hits"]
 
 
 def _browser() -> str | None:

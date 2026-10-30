@@ -131,7 +131,6 @@ def analyze(lg, sim: dict) -> dict:
                     if hi is None and cum >= 0.9:
                         hi = i + 1
             tier = _tier(round(exp), n) if exp else pk.get("tier")
-            v = lg.values.pick(season, pk["round"], tier)
             orig = lg.teams.get(pk["orig_roster_id"], {})
             picks.append({
                 "id": pk["id"], "round": pk["round"], "owner_rid": t["roster_id"], "owner": t["manager"],
@@ -139,7 +138,8 @@ def analyze(lg, sim: dict) -> dict:
                 "exp_slot": round(exp, 1) if exp else None, "range": [lo, hi] if lo else None,
                 "label": _pick_label(pk["round"], slot_in_round(pk["round"], round(exp))) if exp else f"Round {pk['round']}",
                 "overall": round((pk["round"] - 1) * n + slot_in_round(pk["round"], round(exp))) if exp else None,
-                "slot_probs": probs, "tier": tier, "value": round(v["value"]),
+                "slot_probs": probs, "tier": tier, "value": pk["value"],  # priced across its likely slots (pickvalue)
+                "hit": pk.get("hit"), "bust": pk.get("bust"), "kept": pk.get("kept"),
             })
     picks.sort(key=lambda p: (p["round"], p["exp_slot"] or 99))
     capital = defaultdict(lambda: {"n": 0, "value": 0, "firsts": 0})

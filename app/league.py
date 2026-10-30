@@ -5,7 +5,7 @@ import datetime as dt
 import statistics
 from collections import defaultdict
 
-from . import aging, calcfit, opportunity, sleeper, store, tendencies
+from . import aging, calcfit, opportunity, pickvalue, sleeper, store, tendencies
 from .values import ValueBook
 
 POSITIONS = ("QB", "RB", "WR", "TE")
@@ -118,6 +118,17 @@ class League:
                 self.annotate(a)
         # Pick tiers for the next draft depend on projected finish, which uses roster strength.
         self._windows(pre_picks=True)
+        from . import rookies, season  # these import league
+        try:
+            self.sim = season.simulate(self)
+        except Exception:  # no schedule or projections: picks fall back to tier prices
+            self.sim = None
+        try:
+            self.rookies = rookies.analyze(self)
+            self.rookies_error = None
+        except Exception as e:  # history download failed: picks just don't get hit odds
+            self.rookies, self.rookies_error = None, f"{type(e).__name__}: {e}"
+        self._proj = pickvalue.Projector(self, self.sim, self.rookies)
         self._assign_picks(sleeper.traded_picks(lid, force))
         self.trades = sleeper.all_trades(lid, force)
         self.used_picks = sleeper.used_picks(lid, force)
@@ -138,6 +149,10 @@ class League:
             for a in t["players"]:
                 a["notes"] = player_notes(a, self)
         self._franchise()
+        try:
+            pickvalue.annotate_future(self, self._proj)
+        except Exception:  # projections for later drafts are notes only
+            pass
 
     # ------------------------------------------------------------ assets
     def player_asset(self, pid: str) -> dict:
@@ -192,9 +207,19 @@ class League:
         tier_of = {t["roster_id"]: ("early" if i < n / 3 else "mid" if i < 2 * n / 3 else "late")
                    for i, t in enumerate(order)}
         for (season, rnd, orig), own in sorted(owner.items()):
-            tier = tier_of[orig] if season == self.pick_seasons[0] else None
-            if own in self.teams:
-                self.teams[own]["picks"].append(self.pick_asset(season, rnd, orig, own, tier))
+            if own not in self.teams:
+                continue
+            # Next year's picks: priced across the slots the season simulation says they can land in.
+            info = self._proj.next_draft(season, rnd, orig)
+            tier = info["tier"] if info else tier_of[orig] if season == self.pick_seasons[0] else None
+            pk = self.pick_asset(season, rnd, orig, own, tier)
+            if info:
+                scale = info["value"] / (pk["value"] or 1)
+                pk.update(value=round(info["value"]), market=round(info["market"]),
+                          sources={k: round(v * scale) for k, v in pk["sources"].items()},
+                          **{k: info[k] for k in ("slot_range", "exp_slot", "hit", "bust", "later", "kept") if k in info})
+                pk["notes"] = self._proj.notes(info, "from the season simulation")
+            self.teams[own]["picks"].append(pk)
 
     def asset(self, kind: str, aid: str) -> dict | None:
         for t in self.teams.values():
