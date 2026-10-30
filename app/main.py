@@ -12,8 +12,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (buylow, checks, config, counter, deadline, draftprep, drafts, feed, future, market, opportunity, pickhistory, pickups,
-               pitch, rankings, recap, records, retro, roster, season, store, suggest, target, trade, waivers)
+from . import (agenda, buylow, checks, config, counter, deadline, draftprep, drafts, feed, future, health, market, opportunity, pickhistory,
+               pickups, pitch, plan, rankings, recap, records, retro, roster, season, seasonal, store, suggest, target, trade, waivers)
 from .config import ROOT
 from .league import League
 from .values import SOURCE_LABELS
@@ -197,6 +197,25 @@ def _trade(body: TradeIn):
 def evaluate(body: TradeIn):
     lg, a_gives, b_gives = _trade(body)
     return _clean(trade.evaluate(lg, body.a_rid, a_gives, body.b_rid, b_gives))
+
+
+class PlanTrade(BaseModel):
+    b_rid: int
+    a_gives: list[AssetRef]
+    b_gives: list[AssetRef]
+
+
+class PlanIn(BaseModel):
+    trades: list[PlanTrade]
+
+
+@app.post("/api/plan")
+def trade_plan(body: PlanIn):
+    """Several of your trades together: conflicts, and the combined effect on your team."""
+    lg = league()
+    if not lg.me:
+        raise HTTPException(400, "Your username wasn't found in the league; check Settings.")
+    return _clean(plan.run(lg, [t.model_dump() for t in body.trades]))
 
 
 @app.post("/api/trade-impact")
@@ -404,6 +423,36 @@ def rookie_hits():
 def roster_room():
     lg = league()
     return _memo("roster", lg, lambda: _clean(roster.analyze(lg)))
+
+
+@app.get("/api/seasonal")
+def player_seasons():
+    """Dynasty value by calendar month for each position and age group, and when your
+    players are usually worth the most."""
+    lg = league()
+
+    def build():
+        S = lg.seasonal
+        mine = []
+        for a in (lg.me or {}).get("players", []):
+            o = seasonal.outlook(S, a["pos"], a["age"]) if a["value"] >= seasonal.MIN_VALUE else None
+            if o:
+                mine.append({"id": a["id"], "name": a["name"], "pos": a["pos"], "age": a["age"], "value": a["value"],
+                             **{k: o[k] for k in ("group", "best", "best_pct", "worst", "worst_pct")}})
+        return _clean({**S, "mine": sorted(mine, key=lambda m: -m["best_pct"])})
+    return _memo("seasonal", lg, build)
+
+
+@app.get("/api/calendar")
+def season_calendar():
+    lg = league()
+    return _memo("calendar", lg, lambda: _clean(agenda.build(lg, _season(lg))))
+
+
+@app.get("/api/health")
+def data_health():
+    lg = league()
+    return {**_clean(health.report(lg)), "built": _state["built"]}
 
 
 @app.get("/api/status")

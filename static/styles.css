@@ -248,3 +248,8 @@ h2.sec { margin: 18px 0 8px; }
 .rec-gaps { grid-column: 1 / -1; }
 
 .qr svg { display: block; border-radius: 6px; }
+
+/* Opened from the home screen: the page runs under the phone's status bar, so pad the header. */
+@media (display-mode: standalone) {
+  .topbar { padding-top: env(safe-area-inset-top); }
+}

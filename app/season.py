@@ -251,3 +251,19 @@ def trade_impact(lg, a_rid: int, a_gives: list, b_rid: int, b_gives: list) -> di
                     "pick_owner": owner.get(rid), "pick_owner_after": lg.teams[moved[rid]]["manager"] if rid in moved else owner.get(rid)})
     return {"teams": out, "draft_season": nxt, "draft_rule": before["draft_rule"], "weeks_left": len(before["weeks_left"]),
             "teams_n": len(lg.teams)}
+
+
+def lineup_change(lg, rid: int, gives: list, gets: list) -> float | None:
+    """Change in a team's projected points per week over the rest of the regular season
+    if it sends `gives` and receives `gets` (best lineup each week from Sleeper's
+    projections). None when the regular season is over."""
+    cache = getattr(lg, "_rest_proj", None)
+    if cache is None:
+        _, left, _ = _schedule(lg)
+        cache = lg._rest_proj = [_projections(lg.season, w) for w in left]
+    if not cache:
+        return None
+    out = {x["id"] for x in gives}
+    before = lg.teams[rid]["players"]
+    after = [x for x in before if x["id"] not in out] + [dict(x, taxi=False, ir=False) for x in gets if x["kind"] == "player"]
+    return statistics.mean(_lineup_points(lg, after, p) - _lineup_points(lg, before, p) for p in cache)

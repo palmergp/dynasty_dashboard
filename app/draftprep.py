@@ -172,7 +172,9 @@ def analyze(lg, sim: dict) -> dict:
             if p.get("years_exp") == 0 and p.get("position") in POSITIONS and pid not in rostered:
                 v = lg.values.player(pid)["value"]
                 if v > 0:
-                    board.append({"id": pid, "name": p.get("full_name"), "pos": p["position"], "nfl_team": p.get("team"), "value": round(v)})
+                    pr = ((lg.rookies or {}).get("prospects") or {}).get(pid) or {}
+                    board.append({"id": pid, "name": p.get("full_name"), "pos": p["position"], "nfl_team": p.get("team"), "value": round(v),
+                                  "nfl_pick": pr.get("pick"), "hit": pr.get("hit"), "bust": pr.get("bust")})
         board.sort(key=lambda r: -r["value"])
     mock = _mock(lg, board, picks, h, sim.get("_orders") if season == sim["draft_season"] else None) if board else []
     return {"season": season, "teams": n, "rounds": rounds, "snake": snake, "draft_rule": sim["draft_rule"],

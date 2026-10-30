@@ -31,13 +31,15 @@ ROUTES = {
     "#/history": "<h1>Trade history", "#/records": "Record book", "#/settings": "Valuation",
     "#/deadline": "<h1>Deadline sell list", "#/buylow": "<h1>Buy low", "#/future": "<h1>Rebuild timeline", "#/prices": "<h1>League prices",
     "#/recap": "<h1>Weekly recap", "#/roster": "<h1>Roster room", "#/hitrates": "<h1>Rookie pick hit rates",
+    "#/calendar": "<h1>Calendar", "#/plan": "<h1>Trade plan",
 }
 # Cards that load after the page renders: route -> text that appears once they've loaded.
-LATE = {"#/future": "Rank after", "#/prices": "Avg. result on KTC", "#/deadline": "Vs. similar players", "#/buylow": "Vs. similar players"}
+LATE = {"#/deadline": ("By position and age", "Vs. similar players"), "#/settings": (" OK</span>",), "#/future": ("Rank after",),
+        "#/prices": ("Avg. result on KTC",), "#/buylow": ("Vs. similar players",)}
 API = ["overview", "players", "picks", "suggestions", "drafts", "rankings", "waivers", "pickups", "breakouts",
        "backtest", "season", "draft-prep", "trade-review", "records", "trades", "feed", "status", "team/1",
        "deadline", "buylow", "future", "pick-timing", "league-prices", "phone",
-       "target", "calculators", "checks", "recap", "roster-room", "rookie-hits"]
+       "target", "calculators", "checks", "recap", "roster-room", "rookie-hits", "seasonal", "calendar", "health"]
 
 
 def _browser() -> str | None:
@@ -102,6 +104,27 @@ def test_trade_posts(server, path):
         assert out["text"].startswith("Hey ")
 
 
+def test_plan_post(server):
+    with urllib.request.urlopen(f"{server}/api/overview", timeout=600) as r:
+        me = json.loads(r.read())["me"]
+    with urllib.request.urlopen(f"{server}/api/players", timeout=600) as r:
+        players = json.loads(r.read())
+    mine = next(p for p in players if p.get("roster_id") == me)
+    other = next(p for p in players if p.get("roster_id") not in (None, me))
+    t = {"b_rid": other["roster_id"], "a_gives": [{"kind": "player", "id": mine["id"]}], "b_gives": [{"kind": "player", "id": other["id"]}]}
+    body = json.dumps({"trades": [t, t]}).encode()  # the second repeats the first, so it must be flagged and skipped
+    req = urllib.request.Request(f"{server}/api/plan", data=body, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=600) as r:
+        out = json.loads(r.read())
+    assert [t["skipped"] for t in out["trades"]] == [False, True] and out["problems"]
+
+
+@pytest.mark.parametrize("path", ["static/manifest.json", "static/icon-192.png", "static/apple-touch-icon.png"])
+def test_phone_install_files(server, path):
+    with urllib.request.urlopen(f"{server}/{path}", timeout=60) as r:
+        assert r.status == 200
+
+
 def _dom(browser, url):
     out = subprocess.run([browser, "--headless=new", "--disable-gpu", "--virtual-time-budget=20000", "--dump-dom", url],
                          capture_output=True, text=True, encoding="utf-8", timeout=180)
@@ -120,8 +143,8 @@ def test_page(server, route):
         marker = ROUTES[route]
     dom = _dom(browser, f"{server}/{route}")
     assert marker in dom, f"{route}: page didn't render (missing '{marker}')"
-    if route in LATE:
-        assert LATE[route] in dom, f"{route}: a card that loads after the page didn't render (missing '{LATE[route]}')"
+    for late in LATE.get(route, ()):
+        assert late in dom, f"{route}: a card that loads after the page didn't render (missing '{late}')"
     assert "data-js-error" not in dom, f"{route}: JavaScript error"
     assert "Not found." not in dom
     assert 'aria-current="true"' in dom or route == "#/settings", f"{route}: no section highlighted in the nav"

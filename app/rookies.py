@@ -91,13 +91,13 @@ def _finishes(first: int, last: int) -> dict:
 
 
 def _nfl_draft() -> list:
-    """[[season, gsis_id, pos, name], ...] for QB/RB/WR/TE drafted since LONG_FROM."""
+    """[[season, gsis_id, pos, name, overall pick], ...] for QB/RB/WR/TE drafted since LONG_FROM."""
     def fetch():
         r = _http.get(DRAFT_URL)
         r.raise_for_status()
-        t = pq.read_table(io.BytesIO(r.content), columns=["season", "gsis_id", "position", "pfr_player_name"]).to_pydict()
-        return [[s, g, p, n] for s, g, p, n in zip(*t.values()) if s and s >= LONG_FROM and g and p in POSITIONS]
-    return cached("nflverse:draftpicks:v2", 7 * 24 * 3600, fetch)
+        t = pq.read_table(io.BytesIO(r.content), columns=["season", "gsis_id", "position", "pfr_player_name", "pick"]).to_pydict()
+        return [[s, g, p, n, k] for s, g, p, n, k in zip(*t.values()) if s and s >= LONG_FROM and g and p in POSITIONS]
+    return cached("nflverse:draftpicks:v3", 7 * 24 * 3600, fetch)
 
 
 def _july(commits: list, y: int) -> dict | None:
@@ -178,7 +178,7 @@ def analyze(lg) -> dict:
     by_fp = {r["fantasypros_id"]: r for r in ids if r.get("fantasypros_id") not in (None, "", "NA")}
     by_name = {(name_key(r["name"]), r["position"]): r for r in ids if r.get("name")}
     commits = history._commits(f"{FIRST_CLASS}-01-01", "files/values.csv")
-    draft_by_name = {(name_key(n or ""), p): g for _, g, p, n in _nfl_draft()}
+    draft_by_name = {(name_key(n or ""), p): g for _, g, p, n, _ in _nfl_draft()}
     picks = _classes(lg, commits, by_fp, by_name, draft_by_name, n_teams, rounds, superflex)
     finish = _finishes(min(LONG_FROM, FIRST_CLASS), last)
     to_app = lg.values.mappers.get("dynastyprocess") or (lambda v: v)
@@ -235,6 +235,8 @@ def analyze(lg) -> dict:
         value_curve.append({"pos": pos, "held": row, "n": ns})
 
     longevity = _longevity(finish, th, last)
+    capital = _capital(finish, th, last)
+    prospects = _prospects(lg, ids, capital, finish, th, last)
     curves = _curves(picks, n_teams * rounds)
     slot_tiers = []
     for r in range(1, rounds + 1):
@@ -255,7 +257,73 @@ def analyze(lg) -> dict:
     return {"superflex": superflex, "teams": n_teams, "rounds": rounds, "window": WINDOW, "last_season": last,
             "thresholds": th, "classes": sorted({p["cls"] for p in picks}), "complete_classes": complete_classes,
             "by_round": by_round, "by_pos": by_pos, "payoff": payoff, "value_curve": value_curve, "value_years": VALUE_YEARS,
-            "longevity": longevity, "picks": picks, "min_games": MIN_GAMES, "curves": curves, "slot_tiers": slot_tiers}
+            "longevity": longevity, "picks": picks, "min_games": MIN_GAMES, "curves": curves, "slot_tiers": slot_tiers,
+            "capital": capital, "prospects": prospects}
+
+
+CAPITAL_BW = 0.30       # kernel width in log(overall pick)
+CAPITAL_GRID = list(range(1, 33)) + list(range(34, 100, 2)) + list(range(100, 263, 4))
+CAPITAL_RANGES = [(1, 10), (11, 32), (33, 64), (65, 100), (101, 160), (161, 262)]
+
+
+def _capital(finish: dict, th: dict, last: int) -> dict:
+    """Hit, elite and bust rates over the first WINDOW seasons for every QB/RB/WR/TE drafted
+    into the NFL since LONG_FROM (classes with WINDOW seasons played), by position and
+    overall pick: kernel-smoothed in log(pick), plus plain rates by draft range."""
+    import math
+    rows = defaultdict(list)  # pos -> [(log pick, outcome)]
+    for season, gsis, pos, _, pick in _nfl_draft():
+        if season + WINDOW - 1 > last or not pick:
+            continue
+        o, _, _ = _outcome({"cls": season, "gsis": gsis, "pos": pos}, finish, th, last)
+        rows[pos].append((math.log(pick), pick, o))
+    out = {"window": WINDOW, "from": LONG_FROM, "to": last - WINDOW + 1, "grid": CAPITAL_GRID, "positions": {}}
+    for pos in POSITIONS:
+        xs = rows.get(pos) or []
+        curve = {"hit": [], "elite": [], "bust": []}
+        for g in CAPITAL_GRID:
+            lg_ = math.log(g)
+            w = [(math.exp(-((x - lg_) / CAPITAL_BW) ** 2 / 2), o) for x, _, o in xs]
+            tot = sum(a for a, _ in w) or 1
+            curve["hit"].append(round(sum(a for a, o in w if o in ("elite", "starter")) / tot * 100, 1))
+            curve["elite"].append(round(sum(a for a, o in w if o == "elite") / tot * 100, 1))
+            curve["bust"].append(round(sum(a for a, o in w if o == "bust") / tot * 100, 1))
+        ranges = [{"label": f"{lo}–{hi}" if hi < 262 else f"{lo}+", **_rates([{"outcome": o} for _, k, o in xs if lo <= k <= hi])}
+                  for lo, hi in CAPITAL_RANGES]
+        out["positions"][pos] = {"n": len(xs), **curve, "ranges": ranges}
+    return out
+
+
+def capital_odds(capital: dict, pos: str, pick: int) -> dict | None:
+    """Smoothed hit/elite/bust rates for a player drafted at `pick` overall."""
+    c = (capital or {}).get("positions", {}).get(pos)
+    if not c or not pick:
+        return None
+    grid = capital["grid"]
+    i = min(range(len(grid)), key=lambda k: abs(grid[k] - pick))
+    return {"hit": c["hit"][i], "elite": c["elite"][i], "bust": c["bust"][i]}
+
+
+def _prospects(lg, ids: list, capital: dict, finish: dict, th: dict, last: int) -> dict:
+    """sleeper_id -> draft-capital odds and results so far, for players still inside their
+    first WINDOW seasons (and the incoming class once it's drafted)."""
+    out = {}
+    for r in ids:
+        sid, pos = r.get("sleeper_id"), r.get("position")
+        try:
+            year, pick = int(r.get("draft_year")), int(r.get("draft_ovr"))
+        except (TypeError, ValueError):
+            continue
+        if not sid or sid in ("NA", "") or pos not in POSITIONS or year + WINDOW - 1 <= last:
+            continue
+        odds = capital_odds(capital, pos, pick)
+        if not odds:
+            continue
+        o, best, when = _outcome({"cls": year, "gsis": r.get("gsis_id"), "pos": pos}, finish, th, last)
+        out[sid] = {"pick": pick, "round": int(r["draft_round"]) if str(r.get("draft_round")).isdigit() else None, "year": year,
+                    "pos": pos, **odds, "seasons": max(0, last - year + 1), "so_far": o if year <= last else None,
+                    "best": best, "best_season": when}
+    return out
 
 
 def _curves(picks: list, n_slots: int) -> dict:
@@ -293,7 +361,7 @@ def _longevity(finish: dict, th: dict, last: int) -> dict:
     for pos in POSITIONS:
         cut = th["starter"][pos]
         starts = []
-        for season, gsis, p, _ in draft:
+        for season, gsis, p, _, _ in draft:
             if p != pos:
                 continue
             row = [bool((f := finish.get((gsis, season + k))) and f <= cut) for k in range(LONG_YEARS)]

@@ -5,7 +5,7 @@ import datetime as dt
 import statistics
 from collections import defaultdict
 
-from . import aging, calcfit, opportunity, pickvalue, sleeper, store, tendencies
+from . import aging, calcfit, opportunity, pickvalue, seasonal, sleeper, store, tendencies
 from .values import ValueBook
 
 POSITIONS = ("QB", "RB", "WR", "TE")
@@ -113,6 +113,10 @@ class League:
         except Exception as e:  # value history is an extra too
             self.aging = {"curve": {}, "drift": {}, "hist": {"dates": [], "values": {}}}
             self.aging_error = f"{type(e).__name__}: {e}"
+        try:
+            self.seasonal = seasonal.analyze(self)
+        except Exception:  # value history missing: no calendar notes
+            self.seasonal = {"groups": [], "month": None}
         for t in self.teams.values():
             for a in t["players"]:
                 self.annotate(a)
@@ -344,6 +348,19 @@ def is_sell_candidate(a: dict) -> bool:
     return old or win_now_heavy
 
 
+def capital_note(pr: dict) -> str:
+    """Draft-capital odds for a player in his first three seasons (rookies.prospects)."""
+    n = pr["pick"]
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    txt = (f"Drafted {n}{suffix} overall in {pr['year']}: {pr['pos']}s taken around there have had a starter season in their "
+           f"first 3 years {pr['hit']:.0f}% of the time (elite {pr['elite']:.0f}%, bust {pr['bust']:.0f}%).")
+    if pr.get("so_far") in ("elite", "starter"):
+        txt += f" He already has: {pr['pos']}{pr['best']} in {pr['best_season']}."
+    elif pr.get("seasons"):
+        txt += f" No starter season yet after {pr['seasons']} season{'s' if pr['seasons'] > 1 else ''}."
+    return txt
+
+
 def player_notes(a: dict, lg: "League") -> list[str]:
     notes = []
     age, pos, v = a["age"], a["pos"], a["value"]
@@ -380,6 +397,13 @@ def player_notes(a: dict, lg: "League") -> list[str]:
             notes.append(n["text"] + ".")
         if o["breakout"] >= 40:
             notes.append(f"Breakout score {o['breakout']}: role and contract signals point to a bigger role ahead.")
+    if v >= seasonal.MIN_VALUE:
+        cal = seasonal.note(seasonal.outlook(lg.seasonal, pos, age))
+        if cal:
+            notes.append(cal)
+    pr = ((getattr(lg, "rookies", None) or {}).get("prospects") or {}).get(a["id"])
+    if pr:
+        notes.append(capital_note(pr))
     if a.get("injury"):
         notes.append(f"Injury status: {a['injury']}.")
     if a.get("taxi"):

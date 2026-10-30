@@ -349,3 +349,33 @@ def test_pick_slot_pricing():
     d = pickvalue.future_dist(rank=12, n=12, years_out=1)  # worst team: picks first
     assert abs(sum(d) - 1) < 1e-9 and d.index(max(d)) == 0 and min(d) > 0
     assert pickvalue._range([0, 0, 1.0] + [0] * 9) == (3, 3)
+
+
+def test_seasonal_bands_and_outlook():
+    from app import seasonal
+    assert seasonal.band("RB", 23.9) == "young" and seasonal.band("RB", 24.5) == "prime" and seasonal.band("RB", 26.2) == "vet"
+    assert seasonal.band("K", 25) is None
+    idx = [100] * 12
+    idx[0] = 112  # January high
+    S = {"month": 9, "groups": [{"pos": "RB", "band": "prime", "label": "RB 24–25", "index": idx}]}
+    o = seasonal.outlook(S, "RB", 24.5)
+    assert o["best"] == "Jan" and o["best_pct"] == 12.0
+    assert "Jan" in seasonal.note(o)
+    assert seasonal.outlook(S, "WR", 24.5) is None
+
+
+def test_calendar_nfl_draft_is_last_thursday_of_april():
+    import datetime as dt
+    from app.agenda import _nfl_draft
+    for y in (2026, 2027, 2028):
+        d = _nfl_draft(y)
+        assert d.weekday() == 3 and d.month == 4 and (d + dt.timedelta(days=7)).month == 5
+
+
+def test_capital_odds_lookup():
+    from app.rookies import CAPITAL_GRID, capital_odds
+    cap = {"grid": CAPITAL_GRID, "positions": {"WR": {"hit": [100 - i * 0.5 for i in range(len(CAPITAL_GRID))],
+                                                       "elite": [0] * len(CAPITAL_GRID), "bust": [0] * len(CAPITAL_GRID)}}}
+    assert capital_odds(cap, "WR", 1)["hit"] == 100
+    assert capital_odds(cap, "WR", 33)["hit"] < capital_odds(cap, "WR", 10)["hit"]   # later picks: lower odds
+    assert capital_odds(cap, "TE", 10) is None and capital_odds(cap, "WR", None) is None

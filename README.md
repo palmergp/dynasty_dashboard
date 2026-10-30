@@ -40,6 +40,7 @@ The first run creates a virtual environment in `.venv` and installs the requirem
 ### Using it on your phone
 The app also listens on your local network, so a phone on the same Wi-Fi can open it. The terminal prints the address (like `http://192.168.1.20:8000`), and **Settings › Open on your phone** shows it with a QR code to scan. The computer has to stay awake with the app running.
 - **Windows:** the first time, Windows Firewall may ask whether to allow Python; allow it on **private** networks. If phones can't connect, check that your home Wi-Fi is set to **Private** (Settings › Network & internet › Wi-Fi › your network). On a Public network the firewall blocks it, which is what you want at a coffee shop.
+- **Home screen:** in your phone's browser, use *Add to Home Screen* (Safari's share menu, or Chrome's menu) to get an app icon. On iPhone it then opens full screen like an app. (Chrome on Android only opens it full screen on https sites, so there it opens as a browser tab.)
 - Anyone on the same Wi-Fi can open the app (and change its settings), so on networks you don't trust start it with `.\run.ps1 -LocalOnly` (macOS/Linux: `./run.sh --local-only`).
 
 ### 4. Point it at your league
@@ -71,6 +72,7 @@ Pages are grouped into five sections along the top (a tab bar at the bottom on p
 | Page | What it's for |
 |---|---|
 | **Dashboard** | "Since your last visit": value moves and injury changes on your roster, trades and notable adds, newly available players and new breakout flags, with a *Mark all as seen* button. Also your window, ranks, sell candidates and positional outlook. Also a league table of every team's window, strength, picks, needs and tendency tags. |
+| **Calendar** | Your league's key dates through next year's rookie draft (trade deadline, playoffs, NFL draft, roster cuts, rookie draft) and the months picks and players usually peak or bottom out in value, each with what to do then. |
 
 **League**
 
@@ -88,8 +90,9 @@ Pages are grouped into five sections along the top (a tab bar at the bottom on p
 | Page | What it's for |
 |---|---|
 | **Find trades** | Teams ranked by fit, with 3 suggested packages each. Each package shows market fairness, your team-context gain, their acceptance likelihood, and the reasons behind it. |
-| **Evaluate** | Build any trade between two teams by clicking assets. *Make it work for both sides* suggests the smallest changes (ask for more, keep a piece, swap one) that make the deal good for Team A and acceptable to Team B. *Season impact* shows both teams' playoff odds, title odds and projected draft slot with and without the trade. *Message to send* writes a short note for Team B on why the deal helps them. Shows the market verdict, a per-source breakdown, and for each side: context value, lineup impact, age change, pick capital, roster cuts and acceptance. "Suggest trades with Team B" generates packages for one partner. |
-| **Deadline** | Your players worth selling before the trade deadline (countdown included): who values them most among likely playoff teams, what they're expected to lose in a year, and a ready-made asking price from each of the two best buyers that works for both sides. Also an out-of-sample check of how the sell verdicts have held up. |
+| **Evaluate** | Build any trade between two teams by clicking assets. *Make it work for both sides* suggests the smallest changes (ask for more, keep a piece, swap one) that make the deal good for Team A and acceptable to Team B. *Season impact* shows both teams' playoff odds, title odds and projected draft slot with and without the trade. *Message to send* writes a short note for Team B on why the deal helps them. *Add to trade plan* queues the trade on Plan. Shows the market verdict, a per-source breakdown, and for each side: context value, lineup impact, age change, pick capital, roster cuts and acceptance. "Suggest trades with Team B" generates packages for one partner. |
+| **Plan** | Several of your trades together, in order: conflicts (an asset traded twice, roster overflow, too few QBs), and the combined effect on market value, this season's playoff odds and your own 1st's slot, your rebuild timeline ranks, position values, age, pick capital and next offseason's cuts. Saved in your browser. |
+| **Deadline** | Your players worth selling before the trade deadline (countdown included): who values them most among likely playoff teams, what they're expected to lose in a year, and a ready-made asking price from each of the two best buyers that works for both sides and, when possible, doesn't weaken the buyer's lineup this season (shown in points per week). Also when players are usually worth the most by month, position and age. Also an out-of-sample check of how the sell verdicts have held up. |
 | **League prices** | How this league prices each position, pick round and age group in real trades, compared with the market on each trade day, with the trades behind each number. Also which calculator (KeepTradeCut or DynastyProcess) each manager seems to trade by. |
 | **Trade history** | Who won every trade. Each one shows the value gap on trade day, the peak gap since and the gap today, the value of each player then and now, the start points each side got, and a chart of each side's haul over time. Also a manager leaderboard (record, summed gaps then and now, points gained and given), a chart of won-at-the-time vs. won-in-hindsight, and filters by season and manager. |
 
@@ -110,7 +113,7 @@ Pages are grouped into five sections along the top (a tab bar at the bottom on p
 | Page | What it's for |
 |---|---|
 | **Upcoming draft** | The next rookie draft: your picks (valued across the slots they can land in, with how often picks there have hit or busted and whether the market has under- or overpriced them) with projected slots and values, pick capital by team, a heatmap of where every first-round pick will likely land, and how each manager drafts (position leanings, how often they take the best available). Once the rookie class has values after the NFL draft, it adds a big board and mock drafts of who's likely available at each of your picks. *When to sell picks* shows how next year's picks typically gain or lose value month by month. |
-| **Hit rates** | How often rookie picks turn into starters or busts, by round, slot (early/mid/late) and position, from the 2019+ rookie classes. *Early or late* charts hit and bust rates slot by slot and how much value the players taken in each range kept after three years (which slots the market under- or overprices), how long each position keeps producing and keeps its dynasty value, and every pick from every class with its outcome. |
+| **Hit rates** | How often rookie picks turn into starters or busts, by round, slot (early/mid/late) and position, from the 2019+ rookie classes. *By NFL draft capital* gives hit rates by position and overall NFL pick (every QB/RB/WR/TE drafted since 2000); rookies in their first three seasons get these odds in their notes, and the draft board shows them. *Early or late* charts hit and bust rates slot by slot and how much value the players taken in each range kept after three years (which slots the market under- or overprices), how long each position keeps producing and keeps its dynasty value, and every pick from every class with its outcome. |
 | **Roster room** | Next offseason's roster crunch: incoming rookies, who stays on, moves to or ages off the taxi squad, how many players you'll have to cut and in what order (trade the ones with value first), and every other team's crunch, with the best players likely to be cut elsewhere. |
 | **Past drafts** | Draft performance for the startup and rookie drafts. A line chart of every team's draft-class value over time, with up to 4 teams highlighted, as total value or indexed to draft day = 100. Also a scorecard (draft-day value, value now, change, % still on roster and in the league, best and worst picks), the league's biggest risers and fallers, and roster construction (startup / rookie draft / trade / waivers). |
 | **Past drafts › team** | One team's draft-class value vs. the league median, stat tiles, every pick with its draft-day value, current value, sparkline and status (on roster, traded, dropped), and its roster construction. |
@@ -119,7 +122,7 @@ Pages are grouped into five sections along the top (a tab bar at the bottom on p
 
 | Page | What it's for |
 |---|---|
-| **Settings** | Source weights, stud premium, pick multipliers per round, and a data refresh. |
+| **Settings** | Source weights, stud premium, pick multipliers per round, and a data refresh. Also the phone address and *Data health*: every data source, when it last loaded and whether it failed. |
 
 ## Restarted leagues (linked history)
 Some leagues restart in a new Sleeper league, for example to add teams, and Sleeper doesn't connect the old seasons. To include them, put the old league's ID (any season of it) under **Settings › Linked older league IDs**. The app then:
@@ -313,6 +316,23 @@ One install can hold several leagues. Each league you've opened is saved under *
 - Picks two or more years out keep the market's generic value (that's how other managers price them) but get a rough projected range from the rebuild timeline: the original team's projected lineup rank the season before, spread wider each year out.
 - Every pick shows hit and bust odds for its likely slots and how much value players taken there kept after three years (from the rookie history). That last number compares the market with itself: above about 115% the market has underpriced picks there (buy), below about 85% overpriced (sell before the draft). It's a signal, not part of the trade value.
 - So far: 1.01–1.03 have hit about 87% of the time and the rest of the 1st about 58%. Late 1sts (124% of value kept) and late 2nds (126%) have been underpriced; early and mid 2nds (76–84%) and mid and late 3rds (about 62%) overpriced. Early 3rds held up better than late ones.
+
+**When players are worth the most** (`app/seasonal.py`)
+- From DynastyProcess's weekly values: each player's monthly value is divided by his centered 13-month average, which removes his long-run trend (aging, breakouts) and leaves the calendar effect. Averaged by position and age group (players worth 1,500+).
+- Most groups dip in May, when the new rookie class arrives, and run high from late in the season through winter. Most swings are within ±5% (only those are mentioned in player notes); young RBs swing the most (RBs aged 24–25: about 95% of normal in October, 109% in January).
+
+**Rookie odds by NFL draft capital** (`app/rookies.py`)
+- Every QB/RB/WR/TE drafted into the NFL since 2000 with three seasons played, same hit/bust definitions as above, smoothed by position over log(overall pick). Current players' NFL pick comes from DynastyProcess's player ID table.
+- RBs keep good odds deepest (about half of picks 33–64 hit); WRs are the least certain even in the top 10 (about 52% hit, 33% bust).
+
+**Trade plan** (`app/plan.py`)
+- Replays your trades in order on copies of the rosters (later trades can send on assets from earlier ones; anything traded twice is flagged and skipped), then re-runs the season simulation, the rebuild timeline and the roster-room plan with everyone's new rosters.
+
+**Calendar** (`app/agenda.py`)
+- League dates from Sleeper's settings and season start; the NFL draft as the last Thursday of April; the rookie draft from last year's date. Pick and player peaks come from pick timing and the player calendar above.
+
+**Data health** (`app/health.py`)
+- Lists each source, its cache time and its error, if any. Most extras fail quietly so the rest of the app keeps working.
 
 **Trades** (`app/trade.py`, `app/suggest.py`)
 - **Package value** = (Σ vᵖ)^(1/p), with p = 1.35 by default. This adds a stud premium, so two 3,000-value players don't equal one 6,000.

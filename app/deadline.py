@@ -14,13 +14,14 @@ players are worth what the offseason market says, a year older. For each of my p
 
 Buyers are teams with a 25%+ chance to make the playoffs in the season simulation. For the
 best two buyers per player, the asking price is the best package of theirs that works for
-both sides (counter.best_returns).
+both sides (counter.best_returns) and doesn't weaken their lineup for the rest of the season
+(projected points per week): a contender won't take a deal that makes them worse now.
 """
 from __future__ import annotations
 
 import datetime as dt
 
-from . import counter, sleeper
+from . import counter, season, sleeper
 from .trade import context_value
 
 BUYER_ODDS = 25.0
@@ -88,10 +89,16 @@ def analyze(lg, sim: dict) -> dict:
     for r in rows:  # asking prices from the two best buyers
         a = next(x for x in me["players"] if x["id"] == r["id"])
         for b in r["buyers"][:2]:
-            asks = counter.best_returns(lg, me["roster_id"], [a], b["roster_id"], limit=1)
+            asks = counter.best_returns(lg, me["roster_id"], [a], b["roster_id"], limit=5)
             for x in asks:
+                x["their_weekly"] = season.lineup_change(lg, b["roster_id"], x["get"], [a])
+            # Prefer packages that help the buyer this season; then the usual order (best for me).
+            asks.sort(key=lambda x: (x["their_weekly"] is not None and x["their_weekly"] < -0.5))
+            for x in asks[:1]:
                 x["get"] = [{k: g.get(k) for k in ("kind", "id", "name", "pos", "value", "age")} for g in x["get"]]
-            b["asks"] = asks
+                if x["their_weekly"] is not None:
+                    x["their_weekly"] = round(x["their_weekly"], 1)
+            b["asks"] = asks[:1]
         r["buyers"] = r["buyers"][:2]
     return {"deadline": _deadline(lg),
             "buyers": sorted(({"roster_id": b["roster_id"], "manager": b["manager"], "playoff_pct": odds[b["roster_id"]],
