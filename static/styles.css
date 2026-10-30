@@ -253,3 +253,32 @@ h2.sec { margin: 18px 0 8px; }
 @media (display-mode: standalone) {
   .topbar { padding-top: env(safe-area-inset-top); }
 }
+
+/* Weekly recap: scoreboard, awards, previews */
+.headline { font-size: 15px; line-height: 1.5; margin: 6px 0 0; }
+.games { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.game { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--panel); }
+.game.mine { border-color: var(--accent, #3987e5); }
+.game .side { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.game .side .pts { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.game .side.lost { color: var(--muted); }
+.game .side.lost .pts { font-weight: 500; }
+.game .meta { font-size: 12px; color: var(--muted); margin: 2px 0 6px; }
+.game .tags { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+.scorebar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; gap: 2px; margin: 6px 0 2px; }
+.scorebar i { display: block; background: var(--series-1); }
+.scorebar i + i { background: var(--border); }
+.awards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.award { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.award .t { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.award .who { font-weight: 700; margin-top: 4px; }
+.award .stat { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.award .d { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.probbar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; gap: 2px; margin-top: 6px; }
+.probbar i { display: block; background: var(--series-1); }
+.probbar i + i { background: var(--series-2); }
+.range { position: relative; height: 6px; background: var(--border); border-radius: 3px; min-width: 90px; }
+.range i { position: absolute; top: 0; bottom: 0; background: var(--series-1); border-radius: 3px; opacity: .5; }
+.range b { position: absolute; top: -3px; width: 3px; height: 12px; background: var(--series-1); border-radius: 1px; }
+tr.changed td { background: color-mix(in srgb, var(--good) 10%, transparent); }
+

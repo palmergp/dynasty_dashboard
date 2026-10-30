@@ -12,8 +12,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (agenda, buylow, checks, config, counter, deadline, draftprep, drafts, feed, future, health, market, opportunity, pickhistory,
-               pickups, pitch, plan, rankings, recap, records, retro, roster, season, seasonal, store, suggest, target, trade, waivers)
+from . import (agenda, buylow, checks, config, counter, deadline, draftprep, drafts, feed, future, health, lineup, market, opportunity,
+               pickhistory, pickups, pitch, plan, rankings, recap, records, retro, roster, season, seasonal, store, suggest, target, trade, waivers)
 from .config import ROOT
 from .league import League
 from .values import SOURCE_LABELS
@@ -417,6 +417,13 @@ def rookie_hits():
     if lg.rookies is None:
         raise HTTPException(503, f"Couldn't load rookie history: {lg.rookies_error}")
     return _memo("rookies", lg, lambda: _clean(lg.rookies))
+
+
+@app.get("/api/lineup")
+def weekly_lineup(roster_id: int | None = None, week: int | None = None):
+    """Start/sit for a team this week (default: yours)."""
+    lg = league()
+    return _memo(f"lineup:{roster_id}:{week}", lg, lambda: _clean(lineup.analyze(lg, roster_id, week)))
 
 
 @app.get("/api/roster-room")

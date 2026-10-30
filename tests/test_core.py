@@ -379,3 +379,21 @@ def test_capital_odds_lookup():
     assert capital_odds(cap, "WR", 1)["hit"] == 100
     assert capital_odds(cap, "WR", 33)["hit"] < capital_odds(cap, "WR", 10)["hit"]   # later picks: lower odds
     assert capital_odds(cap, "TE", 10) is None and capital_odds(cap, "WR", None) is None
+
+
+def test_recap_streaks():
+    from app.recap import _streak
+    assert _streak(["W", "L", "W", "W"]) == "W2" and _streak(["L"]) == "L1" and _streak([]) == ""
+
+
+def test_lineup_scoring_and_slots():
+    from app import lineup
+    scoring = {"rec": 1.0, "rec_yd": 0.1, "rec_td": 6.0, "bonus_rec_te": 0.5}
+    assert lineup.score({"rec": 5, "rec_yd": 60, "rec_td": 1, "bonus_rec_te": 5, "pts_ppr": 99}, scoring) == 5 + 6 + 6 + 2.5
+    assert lineup.spread("WR", 0) == 0 and lineup.spread("WR", 15) > lineup.spread("QB", 15)  # receivers swing more than QBs
+    P = lambda i, pos, proj: {"id": str(i), "pos": pos, "proj": proj, "sd": lineup.spread(pos, proj)}
+    pool = [P(1, "QB", 20), P(2, "RB", 15), P(3, "WR", 14), P(4, "RB", 12), P(5, "TE", 9), P(6, "WR", 3)]
+    best = lineup._best(["QB", "RB", "WR", "TE", "FLEX"], pool, {}, key=lambda p: p["proj"])
+    assert {p["id"] for p in best.values()} == {"1", "2", "3", "4", "5"}  # the 12-point RB takes FLEX over the 3-point WR
+    kept = lineup._best(["QB", "RB", "WR", "TE", "FLEX"], pool, {4: pool[5]}, key=lambda p: p["proj"])
+    assert kept[4]["id"] == "6"                                            # a locked starter stays put

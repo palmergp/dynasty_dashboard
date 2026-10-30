@@ -72,6 +72,7 @@ Pages are grouped into five sections along the top (a tab bar at the bottom on p
 | Page | What it's for |
 |---|---|
 | **Dashboard** | "Since your last visit": value moves and injury changes on your roster, trades and notable adds, newly available players and new breakout flags, with a *Mark all as seen* button. Also your window, ranks, sell candidates and positional outlook. Also a league table of every team's window, strength, picks, needs and tendency tags. |
+| **Lineup** | Start/sit for this week (any team): the lineup with the best chance to win, the changes to make in Sleeper, each player's projection and likely range, coin-flip decisions, injured or bye-week starters, free agents who'd start, and the opponent's best lineup. |
 | **Calendar** | Your league's key dates through next year's rookie draft (trade deadline, playoffs, NFL draft, roster cuts, rookie draft) and the months picks and players usually peak or bottom out in value, each with what to do then. |
 
 **League**
@@ -82,7 +83,7 @@ Pages are grouped into five sections along the top (a tab bar at the bottom on p
 | **Playoff odds** | Playoff, bye, title and last-place odds for every team, from simulating the rest of the season with weekly projections. Also projected wins, strength of schedule ahead and so far, your remaining games with win chances, and each team's projected rookie-draft slot. |
 | **Timeline** | Every team's projected lineup strength now and 1, 2 and 3 years out if nobody trades, with ranks, the playoff line, the year you'd reach it, your core players' projected values and your picks turning into rookies. *Build toward a year* finds the trades that raise your lineup most in a year you pick, at no more than a 10% cost today. |
 | **Teams** | Roster with values and notes, needs, and a manager profile with tendency bars and auto notes. Also your own notes on the manager, a window override, and their trade history. |
-| **Weekly recap** | A recap of any completed week to paste into the league chat: results, closest game, blowout, top score (ranked in league history), upsets vs. projections, player of the week, points left on the bench, standings, trades, big waiver bids and dynasty value movers. |
+| **Weekly recap** | Any completed week: a scoreboard (each game with projections, the winner's pre-game win chance, lineup efficiency and all-play record), awards (top and low score, closest game, blowout, biggest upset, unluckiest loss, luckiest win, best lineup, points left on the bench with the swap that cost them, player and dud of the week, biggest beat of the projection), standings with movement, streaks, all-play record, luck and playoff odds, a preview of next week with win chances and a game of the week, trades, big waiver bids and dynasty value movers. Plus a version to paste into the league chat, with or without emoji. |
 | **Record book** | All-time records: champions, all-time standings (titles, finals, record, points), highest and lowest scores, biggest blowouts and closest games, best seasons, best single-game and "franchise player" performances, biggest trade fleeces (today, at the time, and reversals), best and worst draft classes, draft steals and busts, and best pickups. Your entries are highlighted. |
 
 **Trades**
@@ -298,7 +299,13 @@ One install can hold several leagues. Each league you've opened is saved under *
 - Built only from points in the other manager's favor: a need the player fills (only if he'd start and their lineup doesn't get weaker), their lineup and playoff-odds gain, their window, the calculator that has them ahead (theirs if they lean), and their trade habits. Nothing about your own gain.
 
 **Weekly recap** (`app/recap.py`)
-- From Sleeper's weekly matchups. Upsets: the winner's starters were projected at least 10 points below the loser's (Sleeper's projections that week). Points left on the bench: the best possible lineup from that week's roster scores minus the actual score.
+- From Sleeper's weekly matchups and projections. A game's pre-game win chance comes from both teams' starters' projections and the league's week-to-week spread; an upset is a winner who had under a 35% chance.
+- Lineup efficiency = points ÷ the best possible lineup from that week's roster. All-play = record against every team every week; luck = actual wins minus the wins the all-play rate predicts.
+- Next week's preview uses each team's best lineup by that week's projections; the game of the week is the closest game with the most playoff stakes (teams whose odds are nearest 50%).
+
+**Lineup** (`app/lineup.py`)
+- Sleeper's weekly stat projections, scored with the league's own scoring settings. Each player's week-to-week spread is fit by position on 2018–2024 weeks (nflverse): about 5.3 + 0.11 × projection for QBs, 3.5 + 0.28× for RBs, 3.0 + 0.33× for WRs and 2.1 + 0.40× for TEs.
+- Starts from the most projected points (strict slots first, then flex), then makes swaps while they raise the chance of beating the opponent's best projected lineup: underdogs gain from higher ceilings on close calls. Players whose game has started stay put. K, DEF and IDP slots aren't covered.
 
 **Roster room** (`app/roster.py`)
 - Next season: one rookie per pick in the next draft. Taxi players past the league's taxi years come off; open taxi spots go to the lowest-valued rookies (and, if the league allows veterans on taxi, to taxi-age players who don't start).

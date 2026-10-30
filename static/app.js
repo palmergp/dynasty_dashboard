@@ -2353,23 +2353,116 @@ async function runPitch() {
 }
 
 // ---------------------------------------------------------------- weekly recap
+const AWARD_ICON = { top: "🔥", low: "🧊", close: "😬", blowout: "💥", upset: "🚨", unlucky: "😩", lucky: "🍀", coach: "🧠", blunder: "🪑", player: "⭐", dud: "💤", beat: "📈" };
+Object.assign(HELP, {
+  allPlay: "Record if this team had played every other team every week. It strips out schedule luck.",
+  luck: "Actual wins minus the wins its all-play record would predict. Positive = lucky schedule so far.",
+  winProb: "Chance to win before kickoff, from both teams' starters' Sleeper projections and how much scores swing week to week in this league.",
+  lineupEff: "Points scored as a share of the best possible lineup from that week's roster.",
+});
+
 async function viewRecap(week) {
-  const R = await api(`/api/recap${week ? `?week=${week}` : ""}`);
-  if (!R.weeks.length) return `<div class="card"><h1>Weekly recap</h1><p class="muted">No completed weeks this season yet.</p></div>`;
+  const [R] = await Promise.all([api(`/api/recap${week ? `?week=${week}` : ""}`), overview()]);
+  if (!R.weeks.length || !R.games) return `<div class="card"><h1>Weekly recap</h1><p class="muted">No completed weeks this season yet.</p></div>`;
+  const me = state.ov?.me;
   setTimeout(() => {
     const sel = $("#rc-week");
     if (sel) sel.onchange = e => { location.hash = `#/recap/${e.target.value}`; };
+    const em = $("#rc-emoji"), ta = $("#rc-text");
+    if (em) em.onchange = () => { ta.value = em.checked ? R.text_emoji : R.text; };
     const cp = $("#rc-copy");
-    if (cp) cp.onclick = () => copyText($("#rc-text").value, $("#rc-text"));
+    if (cp) cp.onclick = () => copyText(ta.value, ta);
   }, 0);
-  return `<div class="card"><div class="row spread"><h1>Weekly recap</h1>
+  const side = (t, won, g) => `<div class="side ${won ? "" : "lost"}"><span>${won ? "<b>" : ""}${esc(t.manager)}${won ? "</b>" : ""}</span><span class="pts">${t.points.toFixed(1)}</span></div>
+    <div class="meta">proj ${t.proj.toFixed(0)} · ${hint(`${t.eff}% of optimal`, HELP.lineupEff)} · ${t.all_play}-${g - 1 - t.all_play} ${hint("all-play", HELP.allPlay)}</div>`;
+  const n = R.games.length * 2;
+  const tag = { upset: ["Upset", "acc-Unlikely"], close: ["Close", "acc-Possible"], blowout: ["Blowout", "res-even"] };
+  const game = g => `<div class="game ${[g.winner.roster_id, g.loser.roster_id].includes(me) ? "mine" : ""}">
+    ${side(g.winner, true, n)}
+    <div class="scorebar"><i style="flex:${g.winner.points}"></i><i style="flex:${g.loser.points}"></i></div>
+    ${side(g.loser, false, n)}
+    <div class="tags">${g.tags.map(k => `<span class="badge ${tag[k][1]}">${tag[k][0]}</span>`).join("")}
+      ${g.win_prob != null ? `<span class="muted small">${hint(`winner had a ${g.win_prob}% chance`, HELP.winProb)}</span>` : ""}</div></div>`;
+  const mv = s => s.move ? `<span class="${s.move > 0 ? "delta-pos" : "delta-neg"}">${s.move > 0 ? "▲" : "▼"}${Math.abs(s.move)}</span>` : '<span class="muted">–</span>';
+  const strk = s => s.streak ? `<span class="badge ${s.streak[0] === "W" ? "acc-Likely" : s.streak[0] === "L" ? "acc-Unlikely" : "res-even"}">${s.streak}</span>` : "";
+  const M = R.movers;
+  return `<div class="card"><div class="row spread"><h1>Week ${R.week} recap</h1>
       <label class="field">Week<select id="rc-week">${R.weeks.map(w => `<option ${w === R.week ? "selected" : ""}>${w}</option>`).join("")}</select></label></div>
-    <p class="muted">A recap of week ${R.week} to paste into your league chat. Upsets use Sleeper's projections for each team's starters that week; trades are judged at today's values; value movers are DynastyProcess's weekly changes for rostered players.</p></div>
-  <div class="grid g2">${R.sections.map(s => `<div class="card"><h2>${esc(s.title)}</h2>${s.numbered
-    ? `<ol class="small" style="margin:0;padding-left:20px">${s.lines.map(x => `<li>${esc(x.replace(/^\d+\.\s*/, ""))}</li>`).join("")}</ol>`
-    : `<ul class="notes">${s.lines.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`}</div>`).join("")}</div>
-  <div class="card"><div class="row spread"><h2>For the league chat</h2><button class="primary" id="rc-copy">Copy</button></div>
-    <textarea id="rc-text" rows="14" style="width:100%">${esc(R.text)}</textarea></div>`;
+    ${R.headline.length ? `<p class="headline">${R.headline.map(esc).join(" ")}</p>` : ""}</div>
+  <div class="card"><h2>Scoreboard</h2><div class="games">${R.games.map(game).join("")}</div></div>
+  <div class="card"><h2>Awards</h2><div class="awards">${R.awards.map(a => `<div class="award"><div class="t">${AWARD_ICON[a.key] || ""} ${esc(a.title)}</div>
+    <div class="who">${esc(a.who)}</div><div class="stat">${esc(a.stat)}</div>${a.detail ? `<div class="d">${esc(a.detail)}</div>` : ""}</div>`).join("")}</div></div>
+  ${R.standings.length ? `<div class="card"><h2>Standings after week ${R.week}</h2><div class="scroll"><table><thead><tr><th class="num">#</th><th>Team</th><th class="num">Record</th><th class="num">Move</th><th>Streak</th>
+      <th class="num">Points</th><th class="num">${hint("All-play", HELP.allPlay)}</th><th class="num">${hint("Luck", HELP.luck)}</th>${R.standings[0].playoff_pct != null ? '<th class="num">Playoff odds</th>' : ""}</tr></thead>
+    <tbody>${R.standings.map(s => `<tr class="${s.roster_id === me ? "me" : ""}"><td class="num">${s.rank}</td><td><b>${esc(s.manager)}</b></td>
+      <td class="num">${s.w}-${s.l}${s.t ? "-" + s.t : ""}</td><td class="num">${mv(s)}</td><td>${strk(s)}</td><td class="num">${fmt(s.pf)}</td><td class="num">${s.all_play}</td>
+      <td class="num ${s.luck >= 0.75 ? "delta-pos" : s.luck <= -0.75 ? "delta-neg" : ""}">${s.luck > 0 ? "+" : ""}${s.luck.toFixed(1)}</td>
+      ${s.playoff_pct != null ? `<td class="num">${s.playoff_pct.toFixed(0)}%</td>` : ""}</tr>`).join("")}</tbody></table></div>
+    <p class="muted small">Luck: positive means more wins than the team's scores alone would have earned (an easy schedule so far).</p></div>` : ""}
+  ${R.preview.length ? `<div class="card"><h2>Next week</h2><div class="games">${R.preview.map(g => `<div class="game ${g.gotw ? "mine" : ""}">
+      ${g.gotw ? '<div class="small"><b>Game of the week</b></div>' : ""}
+      <div class="side"><span><b>${esc(g.fav)}</b></span><span class="pts">${g.fav_prob}%</span></div>
+      <div class="probbar"><i style="flex:${g.fav_prob}"></i><i style="flex:${100 - g.fav_prob}"></i></div>
+      <div class="side lost"><span>${esc(g.dog)}</span><span class="pts">${100 - g.fav_prob}%</span></div>
+      <div class="meta">projected ${g.fav_proj.toFixed(0)} – ${g.dog_proj.toFixed(0)}</div></div>`).join("")}</div>
+    <p class="muted small">From each team's best lineup by this week's Sleeper projections. Game of the week: the closest game with the most playoff stakes.</p></div>` : ""}
+  <div class="grid g2">
+    ${R.trades.length ? `<div class="card"><h2>Trades</h2><ul class="notes">${R.trades.map(t => `<li>${t.sides.map(x => `<b>${esc(x.manager)}</b> gets ${esc(x.gets.join(", "))}`).join("; ")}. <span class="muted">${esc(t.verdict)}.</span></li>`).join("")}</ul></div>` : ""}
+    ${R.waivers.length ? `<div class="card"><h2>Biggest waiver bids</h2><table data-nosort><tbody>${R.waivers.map(b => `<tr><td>${posBadge(b.pos)} ${esc(b.player)}</td><td>${esc(b.manager)}</td><td class="num">$${b.bid}</td></tr>`).join("")}</tbody></table></div>` : ""}
+    ${M ? `<div class="card"><h2>Dynasty value movers</h2><table data-nosort><tbody>${[...M.up, ...M.down].map(m => `<tr><td>${posBadge(m.pos)} ${playerLink(m.id, m.name)}</td><td class="small">${esc(m.manager)}</td>
+      <td class="num ${signCls(m.pct)}">${pct(m.pct, 0)}</td></tr>`).join("")}</tbody></table><p class="muted small">DynastyProcess, over the week.</p></div>` : ""}
+  </div>
+  <div class="card"><div class="row spread"><h2>For the league chat</h2><div class="row"><label class="small"><input type="checkbox" id="rc-emoji" checked> Emoji</label><button class="primary" id="rc-copy">Copy</button></div></div>
+    <textarea id="rc-text" rows="16" style="width:100%">${esc(R.text_emoji)}</textarea></div>`;
+}
+
+// ---------------------------------------------------------------- lineup (start/sit)
+Object.assign(HELP, {
+  floorCeil: "Bar: typical range this week (20th to 80th percentile), from the projection and how much players at his position usually swing week to week. Tick: projection.",
+  bestWin: "Not always the most projected points: an underdog wins more often with higher-ceiling players on close calls, a favorite with steadier ones.",
+});
+
+async function viewLineup(rid) {
+  const L = await api(`/api/lineup${rid ? `?roster_id=${rid}` : ""}`);
+  if (!L.week) return `<div class="card"><h1>Lineup</h1><p class="muted">There's no regular-season week to set a lineup for right now.</p></div>`;
+  setTimeout(() => { const s = $("#lu-team"); if (s) s.onchange = e => { location.hash = `#/lineup/${e.target.value}`; }; }, 0);
+  const max = Math.max(30, ...L.recommended.map(p => p.ceiling), ...L.bench.map(p => p.ceiling));
+  const range = p => p.proj ? `<div class="range" ${tipAttr(`${p.floor}–${p.ceiling} (proj ${p.proj})`, false)}><i style="left:${p.floor / max * 100}%;right:${100 - p.ceiling / max * 100}%"></i><b style="left:${p.proj / max * 100}%"></b></div>` : "";
+  const day = d => d ? new Date(d + "T12:00").toLocaleDateString(undefined, { weekday: "short" }) : "";
+  const status = p => [p.locked ? '<span class="badge res-even">locked</span>' : "", p.bye ? '<span class="badge acc-Unlikely">bye</span>' : "",
+    p.injury ? `<span class="badge ${["Out", "IR", "Doubtful", "PUP", "Sus"].includes(p.injury) ? "acc-Unlikely" : "acc-Possible"}">${esc(p.injury)}</span>` : ""].join(" ");
+  const cur = new Set(L.current.map(p => p.id));
+  const row = (p, slot) => `<tr class="${slot && !cur.has(p.id) ? "changed" : ""}">${slot !== undefined ? `<td class="small">${esc(slot.replace("SUPER_FLEX", "SF").replace("_", " "))}</td>` : ""}
+    <td>${posBadge(p.pos)} ${playerLink(p.id, p.name)} <span class="muted small">${esc(p.nfl_team || "")}${p.opp ? ` vs ${esc(p.opp)} · ${day(p.date)}` : ""}</span> ${status(p)}</td>
+    <td class="num"><b>${p.proj.toFixed(1)}</b></td><td>${range(p)}</td><td class="num">${p.l3 != null ? p.l3.toFixed(1) : "–"}</td></tr>`;
+  const O = L.opponent, C = L.changes;
+  const winTxt = L.win_recommended != null ? `<b>${L.win_recommended}%</b> to win` : "";
+  return `<div class="card"><div class="row spread"><h1>Lineup · week ${L.week}</h1>
+      <label class="field">Team<select id="lu-team">${L.teams.map(t => `<option value="${t.roster_id}" ${t.roster_id === L.roster_id ? "selected" : ""}>${esc(t.manager)}</option>`).join("")}</select></label></div>
+    ${O ? `<p class="headline">${esc(L.manager)} vs. ${esc(O.manager)}: projected <b>${L.proj_recommended.toFixed(1)}</b> to ${O.proj.toFixed(1)}, ${winTxt} with the lineup below.</p>
+      <div class="probbar" style="max-width:420px"><i style="flex:${L.win_recommended}"></i><i style="flex:${100 - L.win_recommended}"></i></div>` : ""}
+    <p class="muted small">Sleeper's projections scored with your league's settings. Starters only for QB/RB/WR/TE slots${L.other_slots.length ? ` (set ${L.other_slots.join(", ")} yourself)` : ""}. Players whose game has started stay where they are.</p></div>
+  ${C ? `<div class="card"><h2>${L.is_me ? "Changes to make in Sleeper" : "Changes from their current lineup"}</h2>
+      <div class="grid g2"><div><h3>Start</h3>${C.start.map(p => `<div>${posBadge(p.pos)} <b>${esc(p.name)}</b> <span class="muted small">${p.proj.toFixed(1)}</span></div>`).join("") || '<span class="muted small">–</span>'}</div>
+        <div><h3>Bench</h3>${C.sit.map(p => `<div>${posBadge(p.pos)} ${esc(p.name)} <span class="muted small">${p.proj.toFixed(1)}${p.why ? ` · <span class="delta-neg">${esc(p.why)}</span>` : ""}</span></div>`).join("") || '<span class="muted small">–</span>'}</div></div>
+      <p class="small">Projected ${L.proj_current.toFixed(1)} → <b>${L.proj_recommended.toFixed(1)}</b>${L.win_current != null ? `, win chance ${L.win_current}% → <b>${L.win_recommended}%</b>` : ""}.</p></div>`
+    : `<div class="card"><p>${L.is_me ? "Your lineup in Sleeper is already the best one for this week." : "Their lineup is already the best one for this week."}</p></div>`}
+  ${L.flags.length ? `<div class="warnbox">${L.flags.map(esc).join(". ")}. Check for news before kickoff.</div>` : ""}
+  <div class="grid g2">
+    <div class="card"><h2>Recommended lineup</h2><table data-nosort><thead><tr><th>Slot</th><th>Player</th><th class="num">Proj</th><th>${hint("Range", HELP.floorCeil)}</th><th class="num">Last 3</th></tr></thead>
+      <tbody>${L.recommended.map(p => row(p, p.slot)).join("")}</tbody></table>
+      ${L.proj_most !== L.proj_recommended ? `<p class="small">${hint("Best chance to win", HELP.bestWin)}: this lineup projects ${(L.proj_most - L.proj_recommended).toFixed(1)} fewer points than the max (${L.proj_most.toFixed(1)}) but raises the win chance from ${L.win_most}% to ${L.win_recommended}%.</p>` : ""}
+      ${L.close.length ? `<h3>Coin flips</h3><ul class="notes">${L.close.map(c => `<li>${esc(c.slot.replace("SUPER_FLEX", "SF"))}: ${esc(c.a)} (${c.a_proj.toFixed(1)}) or ${esc(c.b)} (${c.b_proj.toFixed(1)}). Go with the latest news.</li>`).join("")}</ul>` : ""}</div>
+    <div class="card"><h2>Bench</h2><table data-nosort><thead><tr><th>Player</th><th class="num">Proj</th><th>${hint("Range", HELP.floorCeil)}</th><th class="num">Last 3</th></tr></thead>
+      <tbody>${L.bench.map(p => row(p)).join("")}</tbody></table></div>
+  </div>
+  <div class="grid g2">
+    ${L.free_agents.length ? `<div class="card"><h2>Free agents who'd start</h2><table data-nosort><tbody>${L.free_agents.map(f => `<tr><td>${posBadge(f.pos)} ${playerLink(f.id, f.name)} <span class="muted small">${esc(f.nfl_team || "")}</span>${f.injury ? ` <span class="badge acc-Possible">${esc(f.injury)}</span>` : ""}</td>
+      <td class="num">${f.proj.toFixed(1)}</td><td class="small">+${f.gain.toFixed(1)} at ${esc(f.slot.replace("SUPER_FLEX", "SF"))}</td></tr>`).join("")}</tbody></table>
+      <p class="muted small">Projected this week above your weakest starter in a slot they can fill. <a href="#/pickups">Free agents →</a></p></div>` : ""}
+    ${O ? `<div class="card"><h2>${esc(O.manager)}'s best lineup</h2><table data-nosort><tbody>${O.lineup.map(p => `<tr><td class="small">${esc(p.slot.replace("SUPER_FLEX", "SF").replace("_", " "))}</td>
+      <td>${posBadge(p.pos)} ${esc(p.name)} ${status(p)}</td><td class="num">${p.proj.toFixed(1)}</td></tr>`).join("")}</tbody></table></div>` : ""}
+  </div>`;
 }
 
 // ---------------------------------------------------------------- roster room
@@ -2687,7 +2780,7 @@ const ICONS = {
   draft: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
 };
 const SECTIONS = [
-  { id: "home", label: "Home", pages: [["#/", "Dashboard"], ["#/calendar", "Calendar"]] },
+  { id: "home", label: "Home", pages: [["#/", "Dashboard"], ["#/lineup", "Lineup"], ["#/calendar", "Calendar"]] },
   { id: "league", label: "League", pages: [["#/rankings", "Rankings"], ["#/season", "Playoff odds"], ["#/future", "Timeline"], ["#/team", "Teams"], ["#/recap", "Weekly recap"], ["#/records", "Record book"]] },
   { id: "trades", label: "Trades", pages: [["#/partners", "Find trades"], ["#/trade", "Evaluate"], ["#/plan", "Plan"], ["#/deadline", "Deadline"], ["#/prices", "League prices"], ["#/history", "Trade history"]] },
   { id: "players", label: "Players", pages: [["#/players", "Rostered"], ["#/breakouts", "Breakouts"], ["#/buylow", "Buy low"], ["#/pickups", "Free agents"], ["#/waivers", "Pickup history"]] },
@@ -2724,7 +2817,7 @@ const ROUTES = [
   [/^#\/waivers$/, viewWaivers], [/^#\/waivers\/(\d+)$/, viewWaiverTeam],
   [/^#\/rankings$/, viewRankings], [/^#\/records$/, viewRecords], [/^#\/season$/, viewSeason], [/^#\/player\/(\w+)$/, viewPlayer], [/^#\/draftprep$/, viewDraftPrep], [/^#\/pickups$/, viewPickups], [/^#\/breakouts$/, viewBreakouts],
   [/^#\/deadline$/, viewDeadline], [/^#\/buylow$/, viewBuyLow], [/^#\/future$/, viewFuture], [/^#\/prices$/, viewPrices],
-  [/^#\/recap(?:\/(\d+))?$/, viewRecap], [/^#\/roster$/, viewRoster], [/^#\/hitrates$/, viewHitRates], [/^#\/calendar$/, viewCalendar], [/^#\/plan$/, viewPlan],
+  [/^#\/recap(?:\/(\d+))?$/, viewRecap], [/^#\/roster$/, viewRoster], [/^#\/hitrates$/, viewHitRates], [/^#\/calendar$/, viewCalendar], [/^#\/lineup(?:\/(\d+))?$/, viewLineup], [/^#\/plan$/, viewPlan],
   [/^#\/settings$/, viewSettings],
 ];
 async function route() {
