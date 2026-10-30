@@ -246,3 +246,5 @@ h2.sec { margin: 18px 0 8px; }
 .rec-trade table td { padding: 3px 4px; vertical-align: top; }
 .rec-trade .became { font-size: 11px; margin-top: 2px; }
 .rec-gaps { grid-column: 1 / -1; }
+
+.qr svg { display: block; border-radius: 6px; }

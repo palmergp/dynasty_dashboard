@@ -2,10 +2,12 @@
 `.venv\\Scripts\\python -m uvicorn app.main:app --reload`."""
 from __future__ import annotations
 
+import socket
 import threading
 import time
 
-from fastapi import FastAPI, HTTPException
+import segno
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -344,6 +346,35 @@ def league_prices():
 @app.get("/api/status")
 def status():
     return {"built": _state["built"], "auto_refresh_minutes": config.load().get("auto_refresh_minutes")}
+
+
+def _lan_ip() -> str | None:
+    """This computer's address on the local network (the interface that routes outward).
+    Connecting a UDP socket sends nothing; it only picks the route."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.255.255.255", 1))
+            ip = s.getsockname()[0]
+        return None if ip.startswith("127.") else ip
+    except OSError:
+        return None
+
+
+@app.get("/api/phone")
+def phone(request: Request):
+    """The address to open on a phone on the same Wi-Fi, a QR code for it, and whether the
+    server is actually listening there (run.ps1 -LocalOnly or a 127.0.0.1 uvicorn isn't)."""
+    ip = _lan_ip()
+    port = request.url.port or 80
+    if not ip:
+        return {"url": None, "reachable": False, "svg": None}
+    try:
+        socket.create_connection((ip, port), timeout=0.5).close()
+        reachable = True
+    except OSError:
+        reachable = False
+    url = f"http://{ip}:{port}"
+    return {"url": url, "reachable": reachable, "svg": segno.make(url, error="m").svg_inline(scale=5, border=2, light="#fff")}
 
 
 @app.get("/api/feed")

@@ -37,6 +37,11 @@ chmod +x run.sh   # first time only
 
 The first run creates a virtual environment in `.venv` and installs the requirements, which takes a minute or two. It then starts the server at http://127.0.0.1:8000 and opens your browser. Leave the terminal open while you use the app, and press Ctrl+C to stop it.
 
+### Using it on your phone
+The app also listens on your local network, so a phone on the same Wi-Fi can open it. The terminal prints the address (like `http://192.168.1.20:8000`), and **Settings › Open on your phone** shows it with a QR code to scan. The computer has to stay awake with the app running.
+- **Windows:** the first time, Windows Firewall may ask whether to allow Python; allow it on **private** networks. If phones can't connect, check that your home Wi-Fi is set to **Private** (Settings › Network & internet › Wi-Fi › your network). On a Public network the firewall blocks it, which is what you want at a coffee shop.
+- Anyone on the same Wi-Fi can open the app (and change its settings), so on networks you don't trust start it with `.\run.ps1 -LocalOnly` (macOS/Linux: `./run.sh --local-only`).
+
 ### 4. Point it at your league
 The app starts on the author's league. Go to **Settings**, enter your league ID and Sleeper username, choose your strategy (rebuild / contend / auto) and click **Save**.
 - **League ID:** open your league at [sleeper.com](https://sleeper.com). The long number in the address bar (`sleeper.com/leagues/<league id>/...`) is the ID. 

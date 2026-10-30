@@ -731,9 +731,26 @@ async function viewSettings() {
       <p class="muted small">Scale all pick values in a round to match how your league values picks (e.g. 1.2 = 20% higher than market).</p>
       <button class="primary" id="s-save-val">Save valuation settings</button>
     </div>
+    <div class="card" id="s-phone"><h2>Open on your phone</h2><p class="muted small">Checking…</p></div>
   </div>`;
 }
+async function loadPhone() {
+  const host = $("#s-phone");
+  const p = await api("/api/phone").catch(() => null);
+  if (!host) return;
+  const body = !p || !p.url
+    ? `<p class="muted small">This computer doesn't seem to be on a network right now.</p>`
+    : !p.reachable
+      ? `<p class="small">The server is only listening on this computer. Restart it with <code>.\\run.ps1</code> (without <code>-LocalOnly</code>) to open it from a phone on the same Wi-Fi.</p>`
+      : `<div class="row" style="align-items:center;gap:16px"><div class="qr">${p.svg}</div>
+          <div><p>Scan with your phone's camera, or type<br><b><a href="${esc(p.url)}">${esc(p.url)}</a></b></p>
+          <p class="muted small">Your phone needs to be on the same Wi-Fi, and this computer needs to be awake with the app running.
+            The address can change when your router hands out a new one; this card always shows the current one.</p></div></div>`;
+  host.innerHTML = `<h2>Open on your phone</h2>${body}`;
+}
+
 function wireSettings() {
+  loadPhone();
   $$(".s-w").forEach(r => r.oninput = () => (r.nextElementSibling.textContent = r.value));
   // Picking a saved league fills in its remembered settings; Save switches to it.
   const prof = $("#s-profile");

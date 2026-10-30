@@ -33,7 +33,7 @@ ROUTES = {
 }
 API = ["overview", "players", "picks", "suggestions", "drafts", "rankings", "waivers", "pickups", "breakouts",
        "backtest", "season", "draft-prep", "trade-review", "records", "trades", "feed", "status", "team/1",
-       "deadline", "buylow", "future", "pick-timing", "league-prices"]
+       "deadline", "buylow", "future", "pick-timing", "league-prices", "phone"]
 
 
 def _browser() -> str | None:
