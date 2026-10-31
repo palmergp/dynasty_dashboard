@@ -12,9 +12,9 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (agenda, buylow, checks, config, counter, deadline, draftprep, drafts, feed, future, health, lineup, market, opportunity,
-               pickhistory, pickups, pitch, plan, rankings, recap, records, retro, roster, season, seasonal, secondhalf, store, suggest, target, trade,
-               waivers)
+from . import (agenda, buylow, checks, config, counter, deadline, draftday, draftprep, drafts, feed, future, health, lineup, market,
+               offseason, opportunity, pickhistory, pickups, pitch, plan, rankings, recap, records, retro, roster, season, seasonal,
+               secondhalf, store, suggest, target, track, trade, waivers)
 from .config import ROOT
 from .league import League
 from .values import SOURCE_LABELS
@@ -30,7 +30,16 @@ def league(force: bool = False) -> League:
             _state["league"] = League(config.load(), force=force)
             _state["built"] = time.time()
             _remember_name(_state["league"])
+            _snapshot(_state["league"])
         return _state["league"]
+
+
+def _snapshot(lg):
+    """This week's track-record snapshot (once a week; a no-op the rest of the time)."""
+    try:
+        track.snapshot(lg)
+    except Exception as e:  # never block a build over it
+        print(f"track snapshot failed: {e}")
 
 
 def _remember_name(lg):
@@ -65,6 +74,7 @@ def _rebuild():
     with _lock:
         _state["league"] = League(config.load())
         _state["built"] = time.time()
+    _snapshot(_state["league"])
 
 
 def _clean(obj):
@@ -255,8 +265,16 @@ def suggestions(partner: int | None = None, limit: int = 4):
     if not lg.me:
         raise HTTPException(400, "Your username wasn't found in the league; check Settings.")
     if partner is not None:
-        return _clean(suggest.for_partner(lg, partner, limit))
-    return _clean(suggest.partners(lg, min(limit, 3)))
+        out = suggest.for_partner(lg, partner, limit)
+        groups = [(partner, out)]
+    else:
+        out = suggest.partners(lg, min(limit, 3))
+        groups = [(p["roster_id"], p["suggestions"]) for p in out]
+    try:
+        track.log_suggestions(lg, groups)
+    except Exception as e:  # the log is a record only
+        print(f"suggestion log failed: {e}")
+    return _clean(out)
 
 
 @app.get("/api/drafts")
@@ -426,6 +444,28 @@ def second_half(roster_id: int | None = None):
     lg = league()
     return _memo(f"secondhalf:{roster_id}", lg,
                  lambda: _clean({**secondhalf.targets(lg, roster_id), "deadline": deadline._deadline(lg)}))
+
+
+@app.get("/api/track-record")
+def track_record():
+    """How the app's start/sit, second-half, value and trade calls have turned out."""
+    lg = league()
+    return _memo("track", lg, lambda: _clean(track.analyze(lg)))
+
+
+@app.get("/api/draftday")
+def draft_day(replay: bool = False, at: int | None = None):
+    """The rookie draft room: live while the draft runs (not memoized), or a replay of the last one."""
+    lg = league()
+    if replay:
+        return _memo(f"draftday:{at}", lg, lambda: _clean(draftday.analyze(lg, True, at)))
+    return _clean(draftday.analyze(lg))
+
+
+@app.get("/api/offseason")
+def offseason_checklist():
+    lg = league()
+    return _memo("offseason", lg, lambda: _clean(offseason.build(lg)))
 
 
 @app.get("/api/lineup")

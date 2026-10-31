@@ -31,7 +31,8 @@ ROUTES = {
     "#/history": "<h1>Trade history", "#/records": "Record book", "#/settings": "Valuation",
     "#/deadline": "<h1>Deadline sell list", "#/buylow": "<h1>Buy low", "#/future": "<h1>Rebuild timeline", "#/prices": "<h1>League prices",
     "#/recap": "<h2>Scoreboard", "#/lineup": "<h1>Lineup", "#/secondhalf": "<h1>Second half", "#/roster": "<h1>Roster room", "#/hitrates": "<h1>Rookie pick hit rates",
-    "#/calendar": "<h1>Calendar", "#/plan": "<h1>Trade plan",
+    "#/calendar": "<h1>Calendar", "#/plan": "<h1>Trade plan", "#/track": "<h1>Track record", "#/offseason": "<h1>Offseason checklist",
+    "#/draftday": "<h1>Draft day", "#/draftday/replay": "Before pick",
 }
 # Cards that load after the page renders: route -> text that appears once they've loaded.
 LATE = {"#/deadline": ("By position and age", "Vs. similar players"), "#/settings": (" OK</span>",), "#/future": ("Rank after",),
@@ -39,7 +40,8 @@ LATE = {"#/deadline": ("By position and age", "Vs. similar players"), "#/setting
 API = ["overview", "players", "picks", "suggestions", "drafts", "rankings", "waivers", "pickups", "breakouts",
        "backtest", "season", "draft-prep", "trade-review", "records", "trades", "feed", "status", "team/1",
        "deadline", "buylow", "future", "pick-timing", "league-prices", "phone",
-       "target", "calculators", "checks", "recap", "roster-room", "rookie-hits", "seasonal", "calendar", "health", "lineup", "secondhalf"]
+       "target", "calculators", "checks", "recap", "roster-room", "rookie-hits", "seasonal", "calendar", "health", "lineup", "secondhalf",
+       "track-record", "draftday", "draftday?replay=1", "offseason"]
 
 
 def _browser() -> str | None:

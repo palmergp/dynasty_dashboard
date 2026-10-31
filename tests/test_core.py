@@ -424,3 +424,44 @@ def test_second_half_edge_only_in_real_gain():
     plain = context_value({**a, "h2": None}, team)
     assert context_value(a, team) > plain                                  # counts in the team's real gain
     assert context_value(a, team, {}) == plain                             # not in what a manager perceives
+
+
+def test_track_snapshot_key_and_h2_grading(monkeypatch):
+    import datetime as dt
+    from app import track
+    assert track._key(dt.date(2026, 10, 27)) == "2026-10-27"               # a Tuesday starts its own week
+    assert track._key(dt.date(2026, 11, 2)) == "2026-10-27"                # through the next Monday
+    weekly = {5: {"a": {"pts_ppr": 20, "off_snp": 50}, "b": {"pts_ppr": 6, "off_snp": 40}},
+              6: {"a": {"pts_ppr": 18, "off_snp": 50}, "b": {"pts_ppr": 8, "off_snp": 40}},
+              7: {"a": {"pts_ppr": 22, "off_snp": 50}}}                     # b missed week 7
+    monkeypatch.setattr(track.opportunity, "season_stats", lambda season: weekly)
+    snap = {"date": "2026-10-01", "season": 2026, "week": 5, "h2": {
+        "a": {"pos": "WR", "rate": 18.0, "so_far": 14.0, "model": 17.0, "sleeper": 19.0, "change": 4.0, "f": 1.0, "play": [5, 6, 7], "owner_rid": 1},
+        "b": {"pos": "RB", "rate": 9.0, "so_far": 12.0, "model": None, "sleeper": 9.0, "change": -3.0, "f": 1.0, "play": [5, 6, 7], "owner_rid": 2}}}
+    lg = type("L", (), {"players_db": {}})()
+    (g,) = track._grade_h2(lg, [snap])
+    assert g["n"] == 2 and g["weeks"] == [5, 6, 7]
+    assert g["outlook"] == 2.0                                              # actual 20 and 7 a game: missed by 2 and 2
+    assert g["pace"] == 5.5 and g["movers_hit"] == 100                     # pace missed by 6 and 5; both calls went the right way
+
+
+def test_draftday_order_and_mock():
+    from app import draftday
+    D = {"type": "snake", "settings": {"teams": 3, "rounds": 2}, "slot_to_roster_id": {"1": 30, "2": 10, "3": 20}}
+    made = [{"pick_no": 1, "roster_id": 30, "player_id": "x"}]
+    seq = draftday.pick_order(D, draftday._order(None, D), made, {(2, 10): 30})
+    assert [s["orig"] for s in seq] == [30, 10, 20, 20, 10, 30]             # snake: round 2 runs backwards
+    assert [s["owner"] for s in seq] == [30, 10, 20, 20, 30, 30]            # 10's 2nd was traded to 30
+    assert seq[0]["player"] == "x" and seq[3]["label"] == "2.01"
+    lg = type("L", (), {"teams": {}})()
+    board = [{"id": str(i), "value": 1000 - 100 * i, "pos": "WR"} for i in range(5)]
+    avail, _ = draftday.mock(lg, seq, 1, 6, board, 30, {}, None, skip=4, n_sims=20)
+    assert avail[0]["0"] == 20                                              # the best player is there at the first pick
+    assert avail[4]["4"] == 20 or avail[4]["3"] < 20                        # 3 picks taken, then 30 passes at pick 5
+
+
+def test_offseason_free_agency_date():
+    import datetime as dt
+    from app.offseason import _free_agency
+    d = _free_agency(2027)
+    assert d.weekday() == 2 and 8 <= d.day <= 14 and d.month == 3          # second Wednesday of March

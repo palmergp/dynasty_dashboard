@@ -2780,11 +2780,11 @@ const ICONS = {
   draft: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
 };
 const SECTIONS = [
-  { id: "home", label: "Home", pages: [["#/", "Dashboard"], ["#/lineup", "Lineup"], ["#/calendar", "Calendar"]] },
+  { id: "home", label: "Home", pages: [["#/", "Dashboard"], ["#/lineup", "Lineup"], ["#/calendar", "Calendar"], ["#/offseason", "Offseason"], ["#/track", "Track record"]] },
   { id: "league", label: "League", pages: [["#/rankings", "Rankings"], ["#/season", "Playoff odds"], ["#/future", "Timeline"], ["#/team", "Teams"], ["#/recap", "Weekly recap"], ["#/records", "Record book"]] },
   { id: "trades", label: "Trades", pages: [["#/partners", "Find trades"], ["#/trade", "Evaluate"], ["#/plan", "Plan"], ["#/deadline", "Deadline"], ["#/secondhalf", "Second half"], ["#/prices", "League prices"], ["#/history", "Trade history"]] },
   { id: "players", label: "Players", pages: [["#/players", "Rostered"], ["#/breakouts", "Breakouts"], ["#/buylow", "Buy low"], ["#/pickups", "Free agents"], ["#/waivers", "Pickup history"]] },
-  { id: "draft", label: "Draft", pages: [["#/draftprep", "Upcoming draft"], ["#/hitrates", "Hit rates"], ["#/roster", "Roster room"], ["#/drafts", "Past drafts"]] },
+  { id: "draft", label: "Draft", pages: [["#/draftday", "Draft day"], ["#/draftprep", "Upcoming draft"], ["#/hitrates", "Hit rates"], ["#/roster", "Roster room"], ["#/drafts", "Past drafts"]] },
 ];
 const lastPage = {};  // section id -> last page visited there, so a section tab returns you to it
 
@@ -2888,6 +2888,167 @@ async function viewSecondHalf(rid) {
   </div>`;
 }
 
+// ---------------------------------------------------------------- track record
+Object.assign(HELP, {
+  trLineup: "Each completed week replayed with that week's Sleeper projections: the app's lineup is the most projected points from the players the team had that week (taxi players left out), scored with what those players actually scored. Only QB/RB/WR/TE slots count.",
+  trMiss: "Average miss in points a game against what players actually scored since the snapshot (players with 2+ games since). Lower is better.",
+  trVs: "Median value change vs. players at the same position and value level in the same snapshot, and how many beat them. Positive = did better than similar players.",
+});
+
+async function viewTrack() {
+  const T = await cachedApi("track", "/api/track-record");
+  const L = T.lineups, me = L.teams.find(t => t.is_me);
+  const one = n => (n == null ? "–" : n.toFixed(1));
+  const sgn = n => `<span class="${signCls(n)}">${n > 0 ? "+" : ""}${one(n)}</span>`;
+  const addDays = (d, n) => { const x = new Date(d + "T00:00"); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
+  const H = T.h2[0], V = T.values[0], S = T.suggestions;
+  const rel = s => (!s || !s.n ? '<span class="muted">–</span>' : `<span class="${signCls(s.median_pct)}">${pct(s.median_pct, 0)}</span> <span class="muted small">${s.beat_pct}% beat · ${s.n}</span>`);
+  const names = xs => xs.map(x => `${esc(x.name)} <span class="muted small">(${x.proj != null ? `proj ${x.proj}, ` : ""}scored ${x.pts})</span>`).join(", ");
+  const assets = xs => xs.map(a => `${a.pos && a.pos !== "PICK" ? posBadge(a.pos) + " " : ""}${esc(a.name)}`).join("<br>");
+  const waiting = T.first ? `The first snapshot was saved ${shortDate(T.first)}.` : "The first snapshot is saved the next time the app builds the league.";
+
+  const lineupCard = `<div class="card"><h2>${hint("Start/sit", HELP.trLineup)}</h2>
+    ${L.mine.length ? `<p class="muted small">Your lineups vs. the app's for weeks ${L.weeks[0]}–${L.weeks[L.weeks.length - 1]}. These are replays: the app's pick uses the projections Sleeper has for that week now, which may differ a little from the ones you saw before kickoff.</p>
+    <div class="scroll"><table data-nosort><thead><tr><th>Week</th><th class="num">You</th><th class="num">App</th><th class="num">Best possible</th><th class="num">App − you</th><th>Where you differed</th></tr></thead>
+      <tbody>${L.mine.map(r => `<tr><td>${r.week}</td><td class="num">${one(r.you)}</td><td class="num">${one(r.app)}</td><td class="num">${one(r.best)}</td><td class="num">${sgn(r.app - r.you)}</td>
+        <td class="small">${r.app_start.length ? `App: ${names(r.app_start)}<br>You: ${names(r.you_start)}` : '<span class="muted">Same lineup</span>'}</td></tr>`).join("")}</tbody></table></div>` : `<p class="muted">No completed weeks yet this season.</p>`}
+    ${L.teams.length ? `<h3>Around the league</h3><p class="muted small">Share of the best possible score each manager started, and what the app's lineups would have scored from the same rosters.</p>
+    <div class="scroll"><table><thead><tr><th>Manager</th><th class="num">Started</th><th class="num">App</th><th class="num">App − them</th><th class="num">Weeks app did better</th></tr></thead>
+      <tbody>${L.teams.map(t => `<tr class="${t.is_me ? "mine" : ""}"><td><a href="#/team/${t.roster_id}">${esc(t.manager)}</a></td><td class="num" data-sort="${t.you_pct}">${one(t.you_pct)}%</td>
+        <td class="num" data-sort="${t.app_pct}">${one(t.app_pct)}%</td><td class="num" data-sort="${t.diff}">${sgn(t.diff)}</td><td class="num">${t.app_wins} of ${t.weeks}</td></tr>`).join("")}</tbody></table></div>` : ""}
+    ${L.error ? `<p class="muted small">Couldn't replay lineups: ${esc(L.error)}</p>` : ""}</div>`;
+
+  const h2Card = `<div class="card"><h2>Second-half outlook</h2>
+    ${T.h2.length ? `<p class="muted small">Each weekly snapshot's outlook vs. what players actually scored a game since, next to their pace at the time (points a game so far) and Sleeper's projection. If the outlook misses by less than the pace, it's adding something.</p>
+    <div class="scroll"><table data-nosort><thead><tr><th>Snapshot</th><th class="num">Players</th><th class="num">${hint("Outlook miss", HELP.trMiss)}</th><th class="num">Pace miss</th><th class="num">Sleeper miss</th><th class="num">Usage model miss</th><th class="num">Risers/fallers right</th></tr></thead>
+      <tbody>${T.h2.map(r => `<tr><td>${shortDate(r.date)} <span class="muted small">wk ${r.week}${r.weeks.length ? `, graded on wks ${r.weeks[0]}–${r.weeks[r.weeks.length - 1]}` : ""}</span></td><td class="num">${r.n}</td>
+        <td class="num"><b>${one(r.outlook)}</b></td><td class="num">${one(r.pace)}</td><td class="num">${one(r.sleeper)}</td><td class="num">${one(r.model)}</td>
+        <td class="num">${r.movers_hit != null ? `${r.movers_hit}% <span class="muted small">of ${r.movers}</span>` : "–"}</td></tr>`).join("")}</tbody></table></div>
+    <h3>Biggest calls from ${shortDate(H.date)}</h3><table data-nosort><thead><tr><th>Player</th><th class="num">Pace then</th><th class="num">Outlook</th><th class="num">Since</th><th></th></tr></thead>
+      <tbody>${H.examples.map(x => `<tr><td>${posBadge(x.pos)} ${playerLink(x.id, x.name)}</td><td class="num">${one(x.so_far)}</td><td class="num">${one(x.rate)}</td>
+        <td class="num"><b>${one(x.actual)}</b> <span class="muted small">${x.n} g</span></td><td>${x.hit ? '<span class="badge acc-Likely">right way</span>' : '<span class="badge acc-Unlikely">wrong way</span>'}</td></tr>`).join("")}</tbody></table>`
+    : `<p class="muted">${waiting} The outlook is graded once players have played ${T.h2_games} games since a snapshot${T.first ? `, so the first grades arrive about two weeks after ${shortDate(T.first)}` : ""}.</p>`}</div>`;
+
+  const vCard = `<div class="card"><h2>${hint("Value calls", HELP.trVs)}</h2>
+    ${T.values.length ? `<p class="muted small">Sell-timing verdicts, the buy-low list and your sell candidates from each snapshot at least ${T.value_days} days old, vs. similar players since. The age-curve backtest found sell verdicts trail similar players by about 10% over a year and rising ones beat them by about 4%; a few weeks is a short look.</p>
+    <div class="scroll"><table data-nosort><thead><tr><th>Snapshot</th><th>Sell now</th><th>Sell within a year</th><th>Hold</th><th>Rising</th><th>Buy low</th><th>Your sell list</th></tr></thead>
+      <tbody>${T.values.map(r => `<tr><td>${shortDate(r.date)} <span class="muted small">${r.days} days</span></td><td>${rel(r.verdicts.sell)}</td><td>${rel(r.verdicts.soon)}</td>
+        <td>${rel(r.verdicts.hold)}</td><td>${rel(r.verdicts.rising)}</td><td>${rel(r.buylow)}</td><td>${rel(r.sell)}</td></tr>`).join("")}</tbody></table></div>`
+    : `<p class="muted">${waiting} Value calls are graded after ${T.value_days} days${T.first ? `: the first on ${shortDate(addDays(T.first, T.value_days))}` : ""}.</p>`}</div>`;
+
+  const sCard = `<div class="card"><h2>Trade suggestions</h2>
+    ${S.n ? `<p class="muted small">Every suggestion shown in <a href="#/partners">Find trades</a>, and how the two sides' values have moved since (today's values; a used pick counts as the player taken with it). ${S.graded ? `Of ${S.graded} at least ${T.value_days} days old, the side you'd get gained on the side you'd give in <b>${S.beat_pct}%</b> (median ${S.median_change > 0 ? "+" : ""}${fmt(S.median_change)}).` : ""}</p>
+    <div class="scroll"><table><thead><tr><th>Shown</th><th>With</th><th>You give</th><th>You get</th><th class="num">Then</th><th class="num">Now</th><th class="num">Since</th><th>Made?</th></tr></thead>
+      <tbody>${S.rows.map(r => `<tr><td data-sort="${r.date}">${shortDate(r.date)}</td><td><a href="#/team/${r.partner_rid}">${esc(r.partner)}</a></td><td class="small">${assets(r.give)}</td><td class="small">${assets(r.get)}</td>
+        <td class="num">${signed(r.then)}</td><td class="num">${signed(r.now)}</td><td class="num" data-sort="${r.change}">${signed(r.change)}</td>
+        <td class="small">${r.made ? `<span class="badge acc-Likely">${r.made === "these players" ? "Yes" : "Traded with them"}</span>` : '<span class="muted">No</span>'}</td></tr>`).join("")}</tbody></table></div>`
+    : `<p class="muted">None logged yet. Suggestions are logged when <a href="#/partners">Find trades</a> shows them.</p>`}</div>`;
+
+  return `<div class="card"><h1>Track record</h1>
+    <p class="muted">How the app's own calls have turned out in this league. The models were tested on past seasons; this checks them on yours as results come in. A snapshot of the outlooks and value calls is saved once a week while the app is running${T.snapshots.length ? ` (${T.snapshots.length} so far)` : ""}.</p>
+    <div class="tiles">
+      <div class="tile ${me && me.diff > 0 ? "" : "mine"}"><div class="k">Start/sit</div><div class="v">${me ? sgn(me.diff) : "–"}</div><div class="d muted">${me ? `app vs. your lineups, ${me.weeks} weeks` : "no weeks yet"}</div></div>
+      <div class="tile"><div class="k">Second-half miss</div><div class="v">${H ? one(H.outlook) : "–"}</div><div class="d muted">${H ? `pace missed by ${one(H.pace)}` : "not graded yet"}</div></div>
+      <div class="tile"><div class="k">Sell calls</div><div class="v">${V && V.verdicts.sell.n ? pct(V.verdicts.sell.median_pct, 0) : "–"}</div><div class="d muted">${V ? "vs. similar players" : "not graded yet"}</div></div>
+      <div class="tile"><div class="k">Suggestions logged</div><div class="v">${S.n || 0}</div><div class="d muted">${S.made || 0} made</div></div>
+    </div></div>
+  ${lineupCard}${h2Card}${vCard}${sCard}`;
+}
+
+// ---------------------------------------------------------------- draft day
+Object.assign(HELP, {
+  ddChance: "Chance he's still on the board when this pick comes up, from 300 mock drafts of the picks in between. Each manager takes the best value adjusted for their draft habits and positional needs, with some randomness.",
+  ddRank: "Your order: value adjusted for your roster's long-term needs.",
+  ddAfter: "Chance he's still there at your following pick if you take someone else with your next one (300 mock drafts).",
+  ddCost: "Difference in market pick value between that pick and yours, by slot (Settings › pick multipliers apply).",
+});
+
+async function viewDraftDay(replay, at) {
+  const D = await api(`/api/draftday${replay ? `?replay=1${at ? `&at=${at}` : ""}` : ""}`);
+  const head = `<div class="card"><div class="row spread"><h1>Draft day${replay ? " · replay" : ""}</h1>
+    ${replay ? `<a href="#/draftday">Back to the live draft room</a>` : D.can_replay ? `<a href="#/draftday/replay">Replay last year's draft</a>` : ""}</div>`;
+  if (!D.status) return head + `<p class="muted">${replay ? "There's no completed rookie draft to replay yet." :
+    "There's no upcoming rookie draft in Sleeper yet. Sleeper creates next year's draft after the league renews; once it exists (and the commissioner sets the order), this page follows it live: the board, your next pick, and what moving up or down costs."}</p>
+    ${!replay && D.can_replay ? `<p>Try it on last year's draft: <a href="#/draftday/replay">Replay it pick by pick →</a></p>` : ""}
+    <p class="muted small">Until then, <a href="#/draftprep">Upcoming draft</a> has projected pick slots and mock drafts.</p></div>`;
+  if (D.poll) state.poll = setTimeout(() => { if (location.hash === "#/draftday") route(); }, 15000);
+  const C = D.current, N = D.next, N2 = D.next2;
+  const status = { pre_draft: "Not started", drafting: "Live", paused: "Paused", complete: "Complete" }[D.status] || D.status;
+  const when = D.start_time ? new Date(D.start_time).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : null;
+  const intro = replay
+    ? `<p class="muted">Stepping through the ${D.season} rookie draft as if it were live. It uses today's values, so it knows how that class turned out. Manager habits come only from drafts before it.</p>
+       <div class="row"><a class="btn" href="#/draftday/replay/${Math.max(1, D.at - 1)}">◀ Pick ${Math.max(1, D.at - 1)}</a>
+         <b>Before pick ${D.at} of ${D.total}</b><a class="btn" href="#/draftday/replay/${Math.min(D.total, D.at + 1)}">Pick ${Math.min(D.total, D.at + 1)} ▶</a>
+         ${(D.my_nos || []).length ? `<span class="muted small">Your picks:</span> ${D.my_nos.map(n => `<a href="#/draftday/replay/${n}">#${n}</a>`).join(" ")}` : ""}</div>`
+    : `<p class="muted">The ${D.season} rookie draft: <b>${status}</b>${when ? ` · ${D.status === "pre_draft" ? "starts" : "started"} ${when}` : ""}${D.poll ? ". This page refreshes every 15 seconds." : "."}</p>
+       ${D.order_set ? "" : `<div class="warnbox">Sleeper doesn't have the draft order yet, so picks can't be placed. The board is below.</div>`}`;
+  const tiles = C ? `<div class="tiles">
+      <div class="tile ${C.is_me ? "mine" : ""}"><div class="k">On the clock</div><div class="v">${esc(C.label)}</div><div class="d muted">${C.is_me ? "<b>You</b>" : esc(C.manager)}</div></div>
+      <div class="tile"><div class="k">Your next pick</div><div class="v">${N ? esc(N.label) : "–"}</div><div class="d muted">${N ? (N.away ? `${N.away} pick${N.away === 1 ? "" : "s"} away` : "now") : "none left"}</div></div>
+      <div class="tile"><div class="k">After that</div><div class="v">${N2 ? esc(N2.label) : "–"}</div><div class="d muted">${(D.my_picks || []).length} picks left</div></div>
+      <div class="tile"><div class="k">Your pick's value</div><div class="v">${D.pick_value ? fmt(D.pick_value) : "–"}</div><div class="d muted">market price of the slot</div></div>
+    </div>` : D.status === "complete" ? `<p>The draft is complete.</p>` : "";
+  const onClock = C && C.is_me && D.board.length ? (() => {
+    const top = [...D.board].sort((a, b) => a.rank - b.rank).slice(0, 3);
+    return `<div class="warnbox"><b>You're on the clock.</b> Your top three: ${top.map(b => `<b>${esc(b.name)}</b> (${b.pos}, ${fmt(b.value)}${N2 && b.after != null ? `; ${b.after}% to last until ${esc(N2.label)} if you pass` : ""})`).join(", ")}.
+      ${N2 ? " If two are close, take the one less likely to be there at your next pick." : ""}</div>`;
+  })() : "";
+  const showNext = N && N.away > 0;
+  const board = `<div class="card"><h2>Best available</h2>
+    <div class="scroll"><table><thead><tr><th class="num">${hint("For you", HELP.ddRank)}</th><th>Player</th><th class="num">NFL pick</th><th class="num">Starter / bust</th><th class="num">Value</th>
+      ${showNext ? `<th class="num">${hint(`At ${esc(N.label)}`, HELP.ddChance)}</th>` : ""}${N2 ? `<th class="num">${hint(`At ${esc(N2.label)}`, HELP.ddAfter)}</th>` : ""}${showNext ? "<th>Likely taken by</th>" : ""}</tr></thead>
+      <tbody>${D.board.map(b => `<tr><td class="num">${b.rank ?? "–"}</td><td>${posBadge(b.pos)} ${playerLink(b.id, b.name)} <span class="muted small">${esc(b.nfl_team || "")}</span></td>
+        <td class="num">${b.nfl_pick ?? "–"}</td><td class="num">${b.hit != null ? `${Math.round(b.hit)}% / ${Math.round(b.bust)}%` : "–"}</td><td class="num">${fmt(b.value)}</td>
+        ${showNext ? `<td class="num" data-sort="${b.next}">${b.next}%</td>` : ""}${N2 ? `<td class="num" data-sort="${b.after ?? -1}">${b.after != null ? b.after + "%" : "–"}</td>` : ""}
+        ${showNext ? `<td class="small">${b.likely_by ? `${esc(b.likely_by)} <span class="muted">${b.likely_pct}%</span>` : ""}</td>` : ""}</tr>`).join("")
+        || '<tr><td colspan="8" class="muted">No rookies with values left on the board.</td></tr>'}</tbody></table></div>
+    <p class="muted small">Rookies not yet taken, by dynasty value. Starter / bust: how often players taken around their NFL draft slot had a starter season in their first three years, or never did (<a href="#/hitrates">Hit rates</a>).</p></div>`;
+  const tg = D.targets || [];
+  const chanceCells = xs => xs.map(c => `<td class="num">${c != null ? c + "%" : "–"}</td>`).join("");
+  const tgHead = tg.map(t => `<th class="num">${esc(t.name.split(" ").slice(-1)[0])} there</th>`).join("");
+  const moves = N && tg.length ? `<div class="grid g2">
+    <div class="card"><h2>Moving up</h2>${D.up.length ? `<p class="muted small">Picks before yours: what each costs in pick value, and the chance your top targets (${tg.map(t => esc(t.name)).join(", ")}) are still there when it comes up. At your own pick: ${tg.map(t => `${t.next}%`).join(", ")}.</p>
+      <div class="scroll"><table data-nosort><thead><tr><th>Pick</th><th>Owner</th><th class="num">${hint("Costs", HELP.ddCost)}</th>${tgHead}</tr></thead>
+        <tbody>${D.up.map(u => `<tr><td>${esc(u.label)}</td><td><a href="#/team/${u.roster_id}">${esc(u.manager)}</a></td><td class="num">${fmt(u.cost)}</td>${chanceCells(u.chances)}</tr>`).join("")}</tbody></table></div>`
+      : `<p class="muted">You're on the clock: nothing to move up to.</p>`}</div>
+    <div class="card"><h2>Moving down</h2>${D.down.length ? `<p class="muted small">Picks just after yours: what you'd gain in pick value, and the chance each target lasts that long if your pick goes to another team.</p>
+      <div class="scroll"><table data-nosort><thead><tr><th>Pick</th><th>Owner</th><th class="num">${hint("You gain", HELP.ddCost)}</th>${tgHead}</tr></thead>
+        <tbody>${D.down.map(u => `<tr><td>${esc(u.label)}</td><td><a href="#/team/${u.roster_id}">${esc(u.manager)}</a></td><td class="num">${fmt(u.gain)}</td>${chanceCells(u.chances)}</tr>`).join("")}</tbody></table></div>`
+      : `<p class="muted">No other team's picks right after yours.</p>`}</div>
+  </div>
+  ${(D.ref || []).length ? `<p class="muted small">For scale: ${D.ref.map(r => `${esc(r.name)} ${fmt(r.value)}`).join(" · ")}.</p>` : ""}` : "";
+  const recent = (D.recent || []).length ? `<div class="card"><h2>Latest picks</h2><table data-nosort><tbody>${D.recent.map(r => `<tr class="${r.mine ? "mine" : ""}"><td>${esc(r.label)}</td><td>${esc(r.manager)}</td>
+      <td>${r.pos ? posBadge(r.pos) + " " : ""}${playerLink(r.id, r.name)}</td><td class="num">${fmt(r.value)}</td></tr>`).join("")}</tbody></table></div>` : "";
+  return head + intro + tiles + `</div>` + onClock + board + moves + recent;
+}
+
+// ---------------------------------------------------------------- offseason checklist
+async function viewOffseason() {
+  const O = await cachedApi("offseason", "/api/offseason");
+  const head = `<div class="card"><h1>Offseason checklist</h1>
+    <p class="muted">What to do between the championship and next season, in order, with the players and picks each step is about. Dates marked "around" are estimates. Tick items off as you go (saved in this browser).</p>`;
+  if (!O.phases.length) return head + `<p class="muted">Your username wasn't found in the league; check Settings.</p></div>`;
+  const key = `offseason:${state.ov?.config?.league_id || ""}:${O.season}`;
+  let done = {};
+  try { done = JSON.parse(localStorage.getItem(key) || "{}"); } catch { /* private mode: ticks last until reload */ }
+  const items = O.phases.flatMap(p => p.items);
+  const n = items.filter(i => done[i.id]).length;
+  setTimeout(() => $$("[data-oc]").forEach(cb => cb.onchange = () => {
+    done[cb.dataset.oc] = cb.checked;
+    try { localStorage.setItem(key, JSON.stringify(done)); } catch { /* ignore */ }
+    cb.closest(".oc-item").classList.toggle("muted", cb.checked);
+    $("#oc-count").textContent = `${items.filter(i => done[i.id]).length} of ${items.length}`;
+  }), 0);
+  const asset = a => `<div>${a.kind === "player" ? posBadge(a.pos) + " " + playerLink(a.id, a.name) : esc(a.name)} <span class="muted small">${fmt(a.value)}${a.note ? ` · ${esc(a.note)}` : ""}</span></div>`;
+  return head + `<div class="tiles"><div class="tile"><div class="k">Done</div><div class="v" id="oc-count">${n} of ${items.length}</div><div class="d muted">${O.season} offseason</div></div>
+      <div class="tile"><div class="k">Next rookie draft</div><div class="v">${O.next_draft}</div><div class="d muted"><a href="#/draftday">Draft day</a></div></div></div></div>
+  ${O.phases.map(p => `<div class="card"><h2>${esc(p.title)} <span class="muted small">${p.date ? `${p.approx ? "around " : ""}${shortDate(p.date)}` : ""}</span></h2>
+    ${p.items.map(i => `<div class="oc-item row ${done[i.id] ? "muted" : ""}" style="align-items:flex-start;gap:12px;margin:12px 0">
+      <input type="checkbox" data-oc="${esc(i.id)}" ${done[i.id] ? "checked" : ""} aria-label="Done: ${esc(i.title)}" style="margin-top:4px">
+      <div style="flex:1"><b>${esc(i.title)}</b><div class="small">${esc(i.text)}${i.link ? ` <a href="${i.link}">Open →</a>` : ""}</div>
+        ${i.assets.length ? `<div class="small" style="margin-top:6px">${i.assets.map(asset).join("")}</div>` : ""}</div></div>`).join("")}</div>`).join("")}`;
+}
+
 const ROUTES = [
   [/^#?\/?$/, viewDashboard], [/^#\/partners$/, viewPartners], [/^#\/trade$/, viewTrade],
   [/^#\/team(?:\/(\d+))?$/, viewTeam], [/^#\/players$/, viewPlayers], [/^#\/history$/, viewHistory],
@@ -2896,10 +3057,12 @@ const ROUTES = [
   [/^#\/rankings$/, viewRankings], [/^#\/records$/, viewRecords], [/^#\/season$/, viewSeason], [/^#\/player\/(\w+)$/, viewPlayer], [/^#\/draftprep$/, viewDraftPrep], [/^#\/pickups$/, viewPickups], [/^#\/breakouts$/, viewBreakouts],
   [/^#\/deadline$/, viewDeadline], [/^#\/buylow$/, viewBuyLow], [/^#\/future$/, viewFuture], [/^#\/prices$/, viewPrices],
   [/^#\/recap(?:\/(\d+))?$/, viewRecap], [/^#\/roster$/, viewRoster], [/^#\/hitrates$/, viewHitRates], [/^#\/calendar$/, viewCalendar], [/^#\/lineup(?:\/(\d+))?$/, viewLineup], [/^#\/secondhalf(?:\/(\d+))?$/, viewSecondHalf], [/^#\/plan$/, viewPlan],
+  [/^#\/track$/, viewTrack], [/^#\/draftday(\/replay)?(?:\/(\d+))?$/, viewDraftDay], [/^#\/offseason$/, viewOffseason],
   [/^#\/settings$/, viewSettings],
 ];
 async function route() {
   const h = location.hash || "#/";
+  clearTimeout(state.poll);  // the live draft room's refresh stops when you leave it
   renderNav(h);
   const view = $("#view");
   for (const [re, fn] of ROUTES) {

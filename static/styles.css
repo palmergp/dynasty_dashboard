@@ -282,3 +282,5 @@ h2.sec { margin: 18px 0 8px; }
 .range b { position: absolute; top: -3px; width: 3px; height: 12px; background: var(--series-1); border-radius: 1px; }
 tr.changed td { background: color-mix(in srgb, var(--good) 10%, transparent); }
 
+tr.mine td { background: var(--accent-soft); }
+a.btn { display: inline-block; text-decoration: none; }

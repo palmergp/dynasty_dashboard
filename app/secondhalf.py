@@ -235,6 +235,7 @@ def build(lg) -> dict | None:
                 "ros": round(rate * left_reg, 1), "po": round(rate * left_po, 1),
                 "sched": round(sched, 3) if sched is not None else None, "edge": round(edge(a["pos"], u, len(done), model), 3),
                 "opp_pg": round(u["wo_pg"], 1) if u else None,
+                "f": round(f, 3),  # league points per PPR point (track.py grades in league scoring)
                 "play": sorted(play), "reasons": _reasons(a["pos"], u, so_far or 0.0, model, sleeper, rate, f, sched,
                                                           missed, left_reg, po_missed, eff),
             }

@@ -60,6 +60,17 @@ def draft_picks(draft_id: str, done: bool, force=False) -> list:
     return cached(f"draft_picks:{draft_id}", None if done else LIVE_TTL, lambda: _get(f"/draft/{draft_id}/picks"), force)
 
 
+LIVE_DRAFT_TTL = 10  # seconds: a draft in progress is re-read this often at most
+
+
+def live_draft(draft_id: str) -> dict:
+    return cached(f"draft_live:{draft_id}", LIVE_DRAFT_TTL, lambda: _get(f"/draft/{draft_id}"))
+
+
+def live_draft_picks(draft_id: str) -> list:
+    return cached(f"draft_picks_live:{draft_id}", LIVE_DRAFT_TTL, lambda: _get(f"/draft/{draft_id}/picks"))
+
+
 def is_startup(lg: dict, d: dict) -> bool:
     """A startup draft has far more rounds than the league's rookie drafts."""
     return (d.get("settings") or {}).get("rounds", 0) > (lg.get("settings") or {}).get("draft_rounds", 5)
