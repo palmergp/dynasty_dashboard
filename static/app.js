@@ -1,4 +1,4 @@
-// Dynasty Trade Helper UI — plain JS, hash routing, no build step.
+// Front Office UI — plain JS, hash routing, no build step.
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -2780,7 +2780,7 @@ const ICONS = {
   draft: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
 };
 const SECTIONS = [
-  { id: "home", label: "Home", pages: [["#/", "Dashboard"], ["#/lineup", "Lineup"], ["#/calendar", "Calendar"], ["#/offseason", "Offseason"], ["#/track", "Track record"]] },
+  { id: "home", label: "Home", pages: [["#/", "Dashboard"], ["#/matchup", "Matchup"], ["#/lineup", "Lineup"], ["#/calendar", "Calendar"], ["#/offseason", "Offseason"], ["#/track", "Track record"]] },
   { id: "league", label: "League", pages: [["#/rankings", "Rankings"], ["#/season", "Playoff odds"], ["#/future", "Timeline"], ["#/team", "Teams"], ["#/recap", "Weekly recap"], ["#/records", "Record book"]] },
   { id: "trades", label: "Trades", pages: [["#/partners", "Find trades"], ["#/trade", "Evaluate"], ["#/plan", "Plan"], ["#/deadline", "Deadline"], ["#/secondhalf", "Second half"], ["#/prices", "League prices"], ["#/history", "Trade history"]] },
   { id: "players", label: "Players", pages: [["#/players", "Rostered"], ["#/breakouts", "Breakouts"], ["#/buylow", "Buy low"], ["#/pickups", "Free agents"], ["#/waivers", "Pickup history"]] },
@@ -3049,6 +3049,115 @@ async function viewOffseason() {
         ${i.assets.length ? `<div class="small" style="margin-top:6px">${i.assets.map(asset).join("")}</div>` : ""}</div></div>`).join("")}</div>`).join("")}`;
 }
 
+// ---------------------------------------------------------------- live matchup
+Object.assign(HELP, {
+  muWin: "Points so far plus each starter's projection for the part of his game still to play, with the usual week-to-week spread for what's left. Kickers and defenses use Sleeper's projected points.",
+  muInjClip: "Opens X's latest video posts naming the player with the word injury, from any account: official accounts rarely post injuries, but reporters and fans often do.",
+  muClip: "Free clip finder: opens X's latest video posts naming the player from the NFL's and his team's official accounts, where big plays usually appear within a few minutes.",
+});
+// What you had open survives each 30-second refresh: bench sections and where the plays list was scrolled.
+state.mu = { seen: null, sel: null, side: "all", starters: false, pts: {}, bench: {}, listTop: 0 };
+
+async function viewMatchup(rid, week) {
+  const M = await api(`/api/matchup${rid || week ? `?${rid ? `roster_id=${rid}` : ""}${rid && week ? "&" : ""}${week ? `week=${week}` : ""}` : ""}`);
+  if (!M.week) return `<div class="card"><h1>Matchup</h1><p class="muted">There's no week to show right now. Check back once the season starts.</p></div>`;
+  if (!M.me) return `<div class="card"><h1>Matchup</h1><p class="muted">No matchup for this team in week ${M.week}.</p></div>`;
+  const S = state.mu, A = M.me, B = M.opp;
+  const list0 = $(".mu-list");
+  if (list0) S.listTop = list0.scrollTop;  // the old page is still on screen while this one builds
+  const mine = (await overview()).me === M.roster_id;
+  const sideName = side => side === "me" ? (mine ? `You (${A.manager})` : A.manager) : B ? B.manager : "";
+  const ctx = `${M.roster_id}:${M.week}`;
+  if (S.ctx !== ctx) { S.ctx = ctx; S.seen = null; S.sel = null; S.pts = {}; S.listTop = 0; }
+  // New big plays since the last refresh get a toast; the first load just remembers them.
+  const keys = M.plays.map(p => p.key);
+  if (S.seen) {
+    const fresh = M.plays.filter(p => !S.seen.has(p.key));
+    if (fresh.length) toast(`${fresh[0].kind === "injury" ? "Injury" : "Big play"}: ${fresh[0].name}, ${fresh[0].headline}${fresh[0].points != null ? ` (${fresh[0].points > 0 ? "+" : ""}${fresh[0].points.toFixed(1)})` : ""}${fresh.length > 1 ? ` and ${fresh.length - 1} more` : ""}`);
+  }
+  S.seen = new Set(keys);
+  if (M.poll) state.poll = setTimeout(() => { if (location.hash.startsWith("#/matchup")) route(); }, 30000);
+  const go = (r, w) => `#/matchup/${r}${w && w !== M.weeks[M.weeks.length - 1] ? `/${w}` : ""}`;
+  setTimeout(() => {
+    const t = $("#mu-team"), w = $("#mu-week");
+    if (t) t.onchange = e => { location.hash = go(e.target.value, M.week); };
+    if (w) w.onchange = e => { location.hash = go(M.roster_id, +e.target.value); };
+    $$("[data-play]").forEach(el => { el.onclick = () => { S.sel = el.dataset.play; route(); }; el.onkeydown = e => { if (e.key === "Enter") el.onclick(); }; });
+    $$("[data-muside]").forEach(el => el.onclick = () => { S.side = el.dataset.muside; S.sel = null; route(); });
+    const st = $("#mu-starters"); if (st) st.onchange = e => { S.starters = e.target.checked; S.sel = null; route(); };
+    $$("[data-mubench]").forEach(d => d.ontoggle = () => { S.bench[d.dataset.mubench] = d.open; });
+    const l = $(".mu-list"); if (l) { l.scrollTop = S.listTop; l.onscroll = () => { S.listTop = l.scrollTop; }; }
+  }, 0);
+
+  const prevPts = S.pts; S.pts = {};
+  const status = p => {
+    const g = p.game;
+    if (!g) return '<span class="muted small">no game</span>';
+    const live = g.state === "in";
+    const where = `${g.home ? "vs" : "@"} ${esc(g.opp)}`;
+    const out = p.hurt && p.hurt.status === "Out";  // "has the ball" means nothing for a player ruled out
+    return `<span class="small ${live ? "" : "muted"}">${live ? `<b>${esc(g.detail)}</b> ${where}${g.possession && !out ? ` ·<span class="${g.red_zone ? "delta-neg" : ""}">${g.red_zone ? "red zone" : "has the ball"}</span>` : ""}`
+      : g.state === "post" ? `${esc(g.detail)} ${where}` : `${where} · ${esc((g.detail || "").replace(/^\d+\/\d+ - /, ""))}`}</span>`;
+  };
+  const hurtTag = p => p.hurt ? `<span class="badge acc-Unlikely">${esc(p.hurt.status === "Injured" ? "Injured" : p.hurt.status)}${p.hurt.part ? ` · ${esc(p.hurt.part)}` : ""}</span> ` : "";
+  // Hover (or tap) a player's points: each scored stat × your league's points for it.
+  const num = n => Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0+$/, "");
+  const ptsBreakdown = p => p.breakdown.map(([label, v, mult, pts]) => `${label}: ${num(v)} × ${num(mult)} = ${pts > 0 ? "+" : ""}${pts.toFixed(2)}`).join("\n")
+    + (() => {
+      const sum = p.breakdown.reduce((t, b) => t + b[3], 0);
+      return `\nTotal: ${sum.toFixed(2)}` + (Math.abs(sum - p.points) >= 0.05 ? ` (Sleeper's score, ${p.points.toFixed(2)}, catches up within a minute)` : "");
+    })();
+  const row = (p, slot, who) => {
+    const k = `${who}:${p.id}`, prev = prevPts[k];
+    S.pts[k] = p.points;
+    const up = prev != null && p.points > prev + 0.001;
+    return `<tr class="${up ? "changed" : ""}">${slot !== undefined ? `<td class="small">${esc((slot || "").replace("SUPER_FLEX", "SF").replace("_", " "))}</td>` : ""}
+      <td>${posBadge(p.pos)} ${["K", "DEF"].includes(p.pos) ? esc(p.name) : playerLink(p.id, p.name)}<div>${hurtTag(p)}${status(p)}</div>${p.line ? `<div class="small">${esc(p.line)}</div>` : ""}</td>
+      <td class="num">${p.breakdown && p.breakdown.length ? `<b class="has-tip" ${tipAttr(ptsBreakdown(p))}>${p.points.toFixed(2)}</b>` : `<b>${p.points.toFixed(2)}</b>`}${up ? ` <span class="delta-pos small">+${(p.points - prev).toFixed(1)}</span>` : ""}<div class="muted small">${p.game && p.game.state !== "post" ? `proj ${p.proj.toFixed(1)}` : ""}</div></td></tr>`;
+  };
+  const lineupCard = (T, who) => T ? `<div class="card mu-team ${who}"><div class="row spread"><h2><span class="mu-dot ${who}"></span> ${esc(sideName(who))}</h2><span class="muted small">${T.to_play ? `${T.to_play} still to play` : "all done"}</span></div>
+    <table data-nosort><tbody>${T.starters.map(p => row(p, p.slot, who)).join("")}</tbody></table>
+    <details class="tableview" data-mubench="${who}" ${S.bench[who] ? "open" : ""}><summary>Bench (${T.bench.length})</summary><table data-nosort><tbody>${T.bench.map(p => row(p, undefined, who)).join("")}</tbody></table></details></div>` : "";
+
+  // Big plays: a viewer for the selected one, and the full list to flip through.
+  const shown = M.plays.filter(p => (S.side === "all" || p.side === S.side) && (!S.starters || p.starter));
+  let i = Math.max(0, shown.findIndex(p => p.key === S.sel));
+  const cur = shown[i];
+  const tag = p => `<span class="mu-chip ${p.side}"><i></i>${esc(sideName(p.side))}${p.starter ? "" : " · bench"}</span>`;
+  const ptsTxt = p => p.points == null ? "" : `<b class="${p.points > 0 ? "delta-pos" : p.points < 0 ? "delta-neg" : ""}">${p.points > 0 ? "+" : ""}${p.points.toFixed(1)}</b>`;
+  const injTag = p => p.kind === "injury" ? '<span class="badge acc-Unlikely">Injury</span> ' : "";
+  const when = p => p.period ? `Q${p.period} ${esc(p.clock || "")}` : "";
+  const segBtn = (v, l) => `<button data-muside="${v}" class="${S.side === v ? "on" : ""}">${v === "all" ? "" : `<span class="mu-dot ${v}"></span> `}${l}</button>`;
+  const viewer = cur ? `<div class="mu-play ${cur.side}">
+      <div class="row spread"><div>${tag(cur)}</div><div class="small muted">${when(cur)}${cur.period ? " · " : ""}${esc(cur.nfl_team)} vs ${esc(cur.opp)}</div></div>
+      <div class="mu-head">${injTag(cur)}${posBadge(cur.pos)} ${playerLink(cur.pid, cur.name)}: ${esc(cur.headline)} ${ptsTxt(cur)}</div>
+      <p class="small">${esc(cur.text)}</p>
+      <div class="row"><a class="btn" href="${esc(cur.x_url)}" target="_blank" rel="noopener" ${tipAttr(cur.kind === "injury" ? HELP.muInjClip : HELP.muClip)}>${cur.kind === "injury" ? "Find injury clip on X" : "Find clip on X"} ↗</a>
+        ${cur.game_over ? `<a class="btn" href="${esc(cur.yt_url)}" target="_blank" rel="noopener">Game highlights on YouTube ↗</a>` : ""}
+        <span style="flex:1"></span>
+        <button data-play="${esc((shown[i - 1] || cur).key)}" ${i > 0 ? "" : "disabled"}>◀ Newer</button>
+        <span class="small muted">${i + 1} of ${shown.length}</span>
+        <button data-play="${esc((shown[i + 1] || cur).key)}" ${i < shown.length - 1 ? "" : "disabled"}>Older ▶</button></div></div>`
+    : `<p class="muted">${M.plays.length ? "No big plays for this filter." : M.live ? "No big plays yet. They show up here as they happen: touchdowns, turnovers, 20+ yard plays, 5+ point plays and injuries for anyone on either roster." : "No big plays this week."}</p>`;
+  const list = shown.length ? `<div class="mu-list">${shown.map(p => `<div class="mu-item ${p.side} ${p.key === (cur || {}).key ? "on" : ""}" data-play="${esc(p.key)}" tabindex="0">
+      ${tag(p)} <span class="muted small">${when(p)}</span> ${injTag(p)}${posBadge(p.pos)} <b>${esc(p.name)}</b> ${esc(p.headline)} ${ptsTxt(p)}</div>`).join("")}</div>` : "";
+
+  const win = M.win_pct;
+  const score = (T, cls, who) => `<div style="text-align:${cls}"><div class="small"><span class="mu-dot ${who}"></span> <b>${esc(sideName(who))}</b></div><div class="mu-score">${T.points.toFixed(2)}</div><div class="muted small">projected ${T.final.toFixed(1)}</div></div>`;
+  return `<div class="card"><div class="row spread"><h1>Matchup · week ${M.week}</h1>
+      <div class="row"><label class="field">Team<select id="mu-team">${M.teams.map(t => `<option value="${t.roster_id}" ${t.roster_id === M.roster_id ? "selected" : ""}>${esc(t.manager)}</option>`).join("")}</select></label>
+        <label class="field">Week<select id="mu-week">${M.weeks.map(w => `<option value="${w}" ${w === M.week ? "selected" : ""}>${w}</option>`).join("")}</select></label></div></div>
+    <div class="row spread" style="align-items:flex-end">${score(A, "left", "me")}${B ? `<div class="muted">vs</div>${score(B, "right", "opp")}` : ""}</div>
+    ${win != null ? `<div class="probbar" style="margin-top:10px"><i style="flex:${win}"></i><i style="flex:${100 - win}"></i></div>
+      <p class="small">${hint("Win chance", HELP.muWin)}: <b>${win.toFixed(0)}%</b> ${esc(A.manager)}, ${(100 - win).toFixed(0)}% ${esc(B.manager)}.</p>` : ""}
+    <p class="muted small">${M.poll ? `Live: refreshes every 30 seconds${M.games_on ? ` · ${M.games_on} game${M.games_on === 1 ? "" : "s"} on now` : ""}.` : M.live ? "All games are final." : "Final."} Points from Sleeper, game clocks and plays from ESPN.</p></div>
+  <div class="card"><div class="row spread"><h2>Big plays</h2>
+      <div class="row"><span class="seg">${segBtn("all", "Both teams")}${segBtn("me", esc(sideName("me")))}${B ? segBtn("opp", esc(sideName("opp"))) : ""}</span>
+        <label class="small"><input type="checkbox" id="mu-starters" ${S.starters ? "checked" : ""}> Starters only</label></div></div>
+    ${viewer}${list}</div>
+  <div class="grid g2">${lineupCard(A, "me")}${lineupCard(B, "opp")}</div>`;
+}
+
 const ROUTES = [
   [/^#?\/?$/, viewDashboard], [/^#\/partners$/, viewPartners], [/^#\/trade$/, viewTrade],
   [/^#\/team(?:\/(\d+))?$/, viewTeam], [/^#\/players$/, viewPlayers], [/^#\/history$/, viewHistory],
@@ -3058,6 +3167,7 @@ const ROUTES = [
   [/^#\/deadline$/, viewDeadline], [/^#\/buylow$/, viewBuyLow], [/^#\/future$/, viewFuture], [/^#\/prices$/, viewPrices],
   [/^#\/recap(?:\/(\d+))?$/, viewRecap], [/^#\/roster$/, viewRoster], [/^#\/hitrates$/, viewHitRates], [/^#\/calendar$/, viewCalendar], [/^#\/lineup(?:\/(\d+))?$/, viewLineup], [/^#\/secondhalf(?:\/(\d+))?$/, viewSecondHalf], [/^#\/plan$/, viewPlan],
   [/^#\/track$/, viewTrack], [/^#\/draftday(\/replay)?(?:\/(\d+))?$/, viewDraftDay], [/^#\/offseason$/, viewOffseason],
+  [/^#\/matchup(?:\/(\d+))?(?:\/(\d+))?$/, viewMatchup],
   [/^#\/settings$/, viewSettings],
 ];
 async function route() {

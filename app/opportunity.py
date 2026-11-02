@@ -54,7 +54,7 @@ STATS_URL = "https://api.sleeper.com/stats/nfl/{season}/{week}"
 STAT_FIELDS = ("off_snp", "tm_off_snp", "rec_tgt", "rec_air_yd", "rush_att", "pass_att",
                "rec_rz_tgt", "rush_rz_att", "pts_ppr")
 
-_http = httpx.Client(timeout=120, follow_redirects=True, headers={"User-Agent": "dynasty-trade-helper/1.0"})
+_http = httpx.Client(timeout=120, follow_redirects=True, headers={"User-Agent": "front-office/1.0"})
 
 
 # ------------------------------------------------------------------ data

@@ -465,3 +465,111 @@ def test_offseason_free_agency_date():
     from app.offseason import _free_agency
     d = _free_agency(2027)
     assert d.weekday() == 2 and 8 <= d.day <= 14 and d.month == 3          # second Wednesday of March
+
+
+def test_live_play_parsing():
+    from app import live
+    sc = {"pass_yd": 0.04, "pass_td": 4, "pass_int": -1, "rec": 1, "rec_yd": 0.1, "rec_td": 6, "rush_yd": 0.1, "rush_td": 6,
+          "fum_lost": -2, "bonus_rec_te": 0.5}
+    pat = lambda first, last: live.name_pattern({"first_name": first, "last_name": last})
+
+    def credit(first, last, pos, play):
+        body = dict(play, text=live.main_text(play["text"]))
+        p = pat(first, last)
+        m = p.search(body["text"])
+        if not m:
+            return None
+        r = live.role(body, m.start())
+        lost = live.fumble(body, p)[1]
+        return r, round(live.play_points(body, r, pos, sc, lost), 2), live.headline(body, r, lost)
+
+    td = {"type": "Passing Touchdown", "yards": 24, "turnover": False, "score": True,
+          "text": "(Shotgun) C.Williams pass short right to L.Burden for 24 yards, TOUCHDOWN. TWO-POINT CONVERSION ATTEMPT. C.Williams pass to C.Kmet is complete."}
+    assert credit("Caleb", "Williams", "QB", td) == ("passer", 4.96, "Touchdown: 24-yd pass")
+    assert credit("Luther", "Burden III", "WR", td) == ("receiver", 9.4, "Touchdown: 24-yd catch")   # the suffix is optional
+    assert credit("Cole", "Kmet", "TE", td) is None                                                  # the conversion isn't his touchdown
+    fum = {"type": "Fumble Recovery (Opponent)", "yards": 22, "turnover": True, "score": False,
+           "text": "(Shotgun) B.Purdy pass short left to G.Kittle to ATL 19 for 22 yards (J.Bates). G.Kittle FUMBLES (J.Bates), RECOVERED by ATL."}
+    assert credit("Brock", "Purdy", "QB", fum)[2] != "Fumble lost"                                  # the fumble is the receiver's
+    assert credit("George", "Kittle", "TE", fum)[2] == "Fumble lost"
+    run = {"type": "Rushing Touchdown", "yards": 62, "turnover": False, "score": True,
+           "text": "(Shotgun) B.Nix scrambles up the middle for 62 yards, TOUCHDOWN. W.Lutz extra point is GOOD, Center-M.Fraboni."}
+    assert credit("Bo", "Nix", "QB", run) == ("rusher", 12.2, "Touchdown: 62-yd run")
+    eligible = {"type": "Rushing Touchdown", "yards": 9, "turnover": False, "score": True,
+                "text": "S.Anderson reported in as eligible.  R.Dowdle right guard for 9 yards, TOUCHDOWN. C.Boswell extra point is GOOD."}
+    assert credit("Rico", "Dowdle", "RB", eligible) == ("rusher", 6.9, "Touchdown: 9-yd run")       # notes before the carrier
+    lateral = {"type": "Rush", "yards": -5, "turnover": False, "score": False,  # ESPN doesn't flag this as a turnover
+               "text": "B.Mayfield to ATL 17 for -2 yards. FUMBLES, and recovers at ATL 18. B.Mayfield to ATL 16 for 2 yards. "
+                       "Lateral to B.Irving to ATL 1 for 15 yards (J.Bates). FUMBLES (J.Bates), ball out of bounds in End Zone, Touchback."}
+    assert credit("Bucky", "Irving", "RB", lateral)[0::2] == ("rusher", "Fumble lost")               # out of the end zone: lost
+    assert pat("Josh", "Allen").search("Jos.Allen pass short") and not pat("Josh", "Allen").search("J.Allenby")
+    assert live._remaining({"state": "in", "period": 3, "clock": 450}) == 0.375                     # 7:30 left in Q3
+    assert live._remaining({"state": "pre"}) == 1.0 and live._remaining(None) == 0.0
+    assert live._approx_time("2026-11-01T18:00Z", 2, "15:00") == "2026-11-01T18:45:00Z"
+
+
+def test_live_stat_lines_and_interceptions(monkeypatch):
+    from app import live
+    assert live.stat_line("QB", {"pass_cmp": 18, "pass_att": 27, "pass_yd": 245, "pass_td": 2, "pass_int": 1, "rush_att": 4, "rush_yd": 22}) \
+        == "18/27, 245 yds, 2 TD, 1 INT · 4 car, 22 yds"
+    assert live.stat_line("WR", {"rec": 5, "rec_tgt": 8, "rec_yd": 78, "rec_td": 1}) == "5/8 rec, 78 yds, 1 TD"
+    assert live.stat_line("K", {"fgm": 1, "fga": 2, "xpm": 3, "xpa": 3, "fgm_lng": 47}) == "FG 1/2, XP 3/3, long 47"
+    assert live.stat_line("DEF", {"gp": 1, "pts_allow": 24, "sack": 2, "int": 1}) == "24 pts allowed, 2 sacks, 1 INT"
+    assert live.stat_line("RB", {}) is None
+
+    # An interception thrown at a rostered WR is the passer's play, not the receiver's.
+    db = {"1": {"first_name": "Joe", "last_name": "Burrow"}, "2": {"first_name": "Ja'Marr", "last_name": "Chase"}}
+    lg = type("L", (), {"players_db": db, "season": 2026})()
+    G = {"CIN": {"event": "9", "state": "in", "team_id": "4", "opp": "TEN", "date": "2026-11-01T18:00Z", "team_name": "Bengals", "opp_name": "Titans"}}
+    pick = {"id": "p1", "type": "Pass Interception Return", "text": "(Shotgun) J.Burrow pass deep left intended for J.Chase INTERCEPTED by L.Sneed at TEN 10. L.Sneed to TEN 40 for 30 yards.",
+            "yards": 30, "score": False, "turnover": True, "period": 1, "clock": "9:12", "team_id": "4", "wallclock": None}
+    monkeypatch.setattr(live.espn, "game", lambda event, state: {"plays": [pick], "injuries": []})
+    p = lambda pid, pos, name: {"id": pid, "pos": pos, "nfl_team": "CIN", "name": name}
+    sides = [{"manager": "me", "starters": [p("1", "QB", "Joe Burrow")], "bench": []},
+             {"manager": "them", "starters": [p("2", "WR", "Ja'Marr Chase")], "bench": []}]
+    plays = live.big_plays(lg, sides, G, 8, {"pass_int": -2})
+    assert [(x["name"], x["headline"]) for x in plays] == [("Joe Burrow", "Interception")]
+
+
+def test_live_breakdown_and_injuries():
+    from app import live
+    sc = {"pass_yd": 0.04, "pass_td": 4, "rush_yd": 0.1, "fgm_40_49": 4, "pts_allow_21_27": 0}
+    b = live.breakdown({"pass_yd": 72, "pass_td": 1, "rush_yd": 2, "pass_att": 6, "fgm_40_49": 1}, sc)
+    assert b[0] == ["Passing TDs", 1, 4, 4] and ["Field goals 40–49 yds", 1, 4, 4] in b
+    assert round(sum(x[3] for x in b), 2) == 11.08 and all(x[0] != "Pass attempts" for x in b)  # unscored stats left out
+
+    pid = lambda first, last: live.name_pattern({"first_name": first, "last_name": last})
+    g = {"opp": "BUF", "date": "2026-11-01T18:00Z", "state": "in", "team_name": "Ravens", "opp_name": "Bills"}
+    lamar = {"id": "1", "name": "Lamar Jackson", "pos": "QB", "nfl_team": "BAL"}
+    flowers = {"id": "2", "name": "Zay Flowers", "pos": "WR", "nfl_team": "BAL"}
+    henry = {"id": "3", "name": "Derrick Henry", "pos": "RB", "nfl_team": "BAL"}
+    side = {"manager": "me"}
+    gm = {"plays": [{"id": "a", "text": "L.Jackson pass incomplete short right to Z.Flowers. BLT-L.Jackson was injured during the play.",
+                     "period": 1, "clock": "10:04", "wallclock": "2026-11-01T18:20:00Z"}],
+          "injuries": [{"name": "Lamar Jackson", "team": "BAL", "status": "Out", "date": "2026-11-01T18:26Z", "part": "right thumb"},
+                       {"name": "Zay Flowers", "team": "BAL", "status": "Questionable", "date": "2026-10-30T15:00Z", "part": "ankle"},
+                       {"name": "Derrick Henry", "team": "BAL", "status": "Doubtful", "date": "2026-11-01T19:10Z", "part": None}]}
+    cands = [(p, True, side, pid(*p["name"].split()), g) for p in (lamar, flowers, henry)]
+    out = live.injuries(gm, cands, [side], 8, 2026)
+    assert [(x["name"], x["headline"]) for x in out] == [("Lamar Jackson", "Injured: ruled out (right thumb)"),
+                                                         ("Derrick Henry", "Injured: doubtful to return")]
+    assert lamar["hurt"] == {"status": "Out", "part": "right thumb"} and "hurt" not in flowers   # a pregame report isn't an in-game injury
+    assert out[0]["period"] == 1 and out[1]["wallclock"] == "2026-11-01T19:10Z"                # no play note: timed by the ruling
+
+
+def test_live_clip_search_is_specific_to_the_play():
+    from urllib.parse import unquote
+    from app import live
+    q = lambda url: unquote(url.split("q=", 1)[1].split("&", 1)[0])
+    td = q(live._x_url(["Irving"], "TB", "ATL", "play", "2026-11-01T18:20:00Z", False))
+    assert td.startswith('"Irving" (from:NFL OR from:Buccaneers) filter:videos')
+    assert "since_time:1793557140 until_time:1793559000" in td                       # 1 minute before to 30 after
+    tdpass = q(live._x_url(["Lawrence"] + live._receiver("T.Lawrence pass short middle to Bri.Thomas for 12 yards, TOUCHDOWN."),
+                           "JAX", "IND", "play", "2026-11-01T18:20:00Z", False))
+    assert tdpass.startswith('("Lawrence" OR "Thomas")')                          # captions usually name the receiver
+    fum = q(live._x_url(["Irving"], "TB", "ATL", "fumble", "2026-11-01T18:20:00Z", False))
+    assert fum.startswith("(from:Buccaneers OR from:AtlantaFalcons) filter:videos")  # only the two teams' accounts:
+    assert "from:NFL" not in fum and "Irving" not in fum                             # the NFL posts every game's turnovers
+    inj = q(live._x_url(["Lamar Jackson"], "BAL", "BUF", "injury", "2026-11-01T18:26Z", True))
+    assert '"Lamar Jackson" (injury' in inj and "from:" not in inj                          # any account
+    assert "since_time:1793556660 until_time:1793560260" in inj                      # an estimated time gets a wider window

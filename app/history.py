@@ -20,7 +20,7 @@ from .values import SCALE, _dp_ids, _match, _name_index
 
 REPO = "dynastyprocess/data"
 PATH = "files/values-players.csv"
-_http = httpx.Client(timeout=45, headers={"User-Agent": "dynasty-trade-helper/1.0"}, follow_redirects=True)
+_http = httpx.Client(timeout=45, headers={"User-Agent": "front-office/1.0"}, follow_redirects=True)
 
 
 def _commits(since: str, path: str = PATH) -> list[dict]:

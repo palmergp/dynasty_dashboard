@@ -9,7 +9,7 @@ BASE = "https://api.sleeper.app/v1"
 LIVE_TTL = 15 * 60
 PLAYERS_TTL = 24 * 3600
 
-_client = httpx.Client(timeout=30, headers={"User-Agent": "dynasty-trade-helper/1.0"})
+_client = httpx.Client(timeout=30, headers={"User-Agent": "front-office/1.0"})
 
 PLAYER_FIELDS = (
     "full_name", "first_name", "last_name", "position", "team", "age", "birth_date",
@@ -46,6 +46,11 @@ def transactions(league_id: str, week: int, ttl=LIVE_TTL, force=False) -> list:
 def matchups(league_id: str, week: int, done: bool, force=False) -> list:
     return cached(f"matchups:{league_id}:{week}", None if done else LIVE_TTL,
                   lambda: _get(f"/league/{league_id}/matchups/{week}"), force)
+
+
+def live_matchups(league_id: str, week: int) -> list:
+    """This week's matchups while games are on (players' points update during games)."""
+    return cached(f"matchups_live:{league_id}:{week}", 30, lambda: _get(f"/league/{league_id}/matchups/{week}"))
 
 
 def cached_drafts(league_id: str, force=False) -> list:

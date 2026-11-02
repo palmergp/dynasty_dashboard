@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#1a1e24"/>
+  <!-- A briefcase made of a football: the front office of a football team. -->
+  <path d="M206 196v-34a26 26 0 0 1 26-26h48a26 26 0 0 1 26 26v34" fill="none" stroke="#c9733e" stroke-width="26" stroke-linejoin="round"/>
+  <rect x="104" y="188" width="304" height="196" rx="44" fill="#b8612f"/>
+  <path d="M152 196v180M360 196v180" stroke="#f3f4f6" stroke-width="14" opacity=".9"/>
+  <path d="M206 286h100" stroke="#f3f4f6" stroke-width="14" stroke-linecap="round"/>
+  <path d="M222 266v40M246 266v40M270 266v40M294 266v40" stroke="#f3f4f6" stroke-width="12" stroke-linecap="round"/>
+</svg>

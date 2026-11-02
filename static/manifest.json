@@ -1,7 +1,7 @@
 {
-  "name": "Dynasty Trade Helper",
-  "short_name": "Dynasty",
-  "description": "Trade, draft and rebuild analysis for your Sleeper dynasty league.",
+  "name": "Front Office",
+  "short_name": "Front Office",
+  "description": "Trades, lineups, live matchups, drafts and rebuild planning for your Sleeper dynasty league.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

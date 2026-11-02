@@ -27,7 +27,7 @@ SCALE = 10_000
 SOURCES = ("fantasycalc", "ktc", "dynastyprocess")
 SOURCE_LABELS = {"fantasycalc": "FantasyCalc", "ktc": "KeepTradeCut", "dynastyprocess": "DynastyProcess"}
 
-_http = httpx.Client(timeout=45, headers={"User-Agent": "Mozilla/5.0 (dynasty-trade-helper)"}, follow_redirects=True)
+_http = httpx.Client(timeout=45, headers={"User-Agent": "Mozilla/5.0 (front-office)"}, follow_redirects=True)
 
 DP_BASE = "https://raw.githubusercontent.com/dynastyprocess/data/master/files"
 ROUND_RE = r"(\d)(?:st|nd|rd|th)"

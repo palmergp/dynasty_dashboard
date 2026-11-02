@@ -1,4 +1,4 @@
-# Starts the Dynasty Trade Helper at http://127.0.0.1:8000, reachable from phones on the same Wi-Fi.
+# Starts Front Office at http://127.0.0.1:8000, reachable from phones on the same Wi-Fi.
 # Creates the virtualenv on first run and installs any new requirements after an update.
 # -LocalOnly keeps it on this computer (use it on networks you don't trust).
 param([switch]$LocalOnly)

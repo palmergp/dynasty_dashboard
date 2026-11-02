@@ -45,6 +45,7 @@ h3 { font-size: 14px; margin: 14px 0 6px; text-transform: uppercase; letter-spac
 .topbar { position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 1px solid var(--border); }
 .topbar .topline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 10px 20px; }
 .brand { font-weight: 700; }
+.brand .logo { width: 22px; height: 22px; border-radius: 5px; vertical-align: -5px; margin-right: 8px; }
 #nav { display: flex; gap: 4px; }
 #nav a { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; color: var(--text); font-weight: 500; }
 #nav a .ico { display: none; }
@@ -147,7 +148,7 @@ label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; 
 [data-tip]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 .help-tip { position: fixed; z-index: 20; max-width: 300px; padding: 8px 10px; border-radius: 8px; font-size: 12px; line-height: 1.45;
   font-weight: 400; text-transform: none; letter-spacing: normal; background: var(--text); color: var(--bg); pointer-events: none;
-  box-shadow: 0 4px 16px rgba(0,0,0,.18); }
+  box-shadow: 0 4px 16px rgba(0,0,0,.18); white-space: pre-line; }
 
 /* ---- charts */
 .chart { position: relative; width: 100%; }
@@ -284,3 +285,23 @@ tr.changed td { background: color-mix(in srgb, var(--good) 10%, transparent); }
 
 tr.mine td { background: var(--accent-soft); }
 a.btn { display: inline-block; text-decoration: none; }
+.mu-score { font-size: 34px; font-weight: 700; line-height: 1.1; }
+.mu-play { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin: 8px 0 12px; }
+.mu-head { font-size: 18px; font-weight: 600; margin: 6px 0; }
+.mu-list { max-height: 340px; overflow-y: auto; border-top: 1px solid var(--border); }
+.mu-item { padding: 7px 4px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.mu-item:hover, .mu-item.on { background: var(--accent-soft); }
+/* Which side a play or lineup belongs to: the win-chance bar's colors (you = series 1, opponent = series 2). */
+.mu-play.me, .mu-item.me { border-left: 5px solid var(--series-1); }
+.mu-play.opp, .mu-item.opp { border-left: 5px solid var(--series-2); }
+.mu-play.me { background: color-mix(in srgb, var(--series-1) 7%, transparent); }
+.mu-play.opp { background: color-mix(in srgb, var(--series-2) 7%, transparent); }
+.mu-item { padding-left: 10px; }
+.mu-team.me { border-top: 4px solid var(--series-1); }
+.mu-team.opp { border-top: 4px solid var(--series-2); }
+.mu-chip { display: inline-flex; align-items: center; gap: 6px; padding: 1px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.mu-chip.me { background: color-mix(in srgb, var(--series-1) 22%, transparent); }
+.mu-chip.opp { background: color-mix(in srgb, var(--series-2) 22%, transparent); }
+.mu-chip i, .mu-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.mu-chip.me i, .mu-dot.me { background: var(--series-1); }
+.mu-chip.opp i, .mu-dot.opp { background: var(--series-2); }

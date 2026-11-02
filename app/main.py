@@ -12,14 +12,14 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (agenda, buylow, checks, config, counter, deadline, draftday, draftprep, drafts, feed, future, health, lineup, market,
+from . import (agenda, buylow, checks, config, counter, deadline, draftday, draftprep, drafts, feed, future, health, lineup, live, market,
                offseason, opportunity, pickhistory, pickups, pitch, plan, rankings, recap, records, retro, roster, season, seasonal,
                secondhalf, store, suggest, target, track, trade, waivers)
 from .config import ROOT
 from .league import League
 from .values import SOURCE_LABELS
 
-app = FastAPI(title="Dynasty Trade Helper")
+app = FastAPI(title="Front Office")
 _lock = threading.Lock()
 _state: dict = {"league": None, "built": 0.0}
 
@@ -466,6 +466,16 @@ def draft_day(replay: bool = False, at: int | None = None):
 def offseason_checklist():
     lg = league()
     return _memo("offseason", lg, lambda: _clean(offseason.build(lg)))
+
+
+@app.get("/api/matchup")
+def live_matchup(roster_id: int | None = None, week: int | None = None):
+    """A matchup with live points, game status, win chance and big plays. The current week
+    isn't memoized: its data refreshes on short timers while games are on."""
+    lg = league()
+    if week is None or week == lineup.current_week(lg):
+        return _clean(live.analyze(lg, roster_id, week))
+    return _memo(f"matchup:{roster_id}:{week}", lg, lambda: _clean(live.analyze(lg, roster_id, week)))
 
 
 @app.get("/api/lineup")

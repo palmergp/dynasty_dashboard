@@ -1,6 +1,8 @@
-# Dynasty Trade Helper
+# Front Office
 
-A local web app for evaluating and finding trades in a Sleeper dynasty league. It pulls your league from the Sleeper API, blends dynasty values from three sources, works out each team's contention window and needs, profiles each manager's trade tendencies, and suggests trades tailored to every partner.
+<img src="static/logo.svg" width="96" alt="Front Office logo">
+
+A local web app for running a Sleeper dynasty team. It pulls your league from the Sleeper API, blends dynasty values from three sources, works out each team's contention window and needs, profiles each manager's trade tendencies, and suggests trades tailored to every partner. It also sets your weekly lineup, follows your matchup live with big-play highlights, runs your rookie draft, plans the offseason, and grades its own past advice.
 
 ## Getting started
 
@@ -72,6 +74,7 @@ Pages are grouped into five sections along the top (a tab bar at the bottom on p
 | Page | What it's for |
 |---|---|
 | **Dashboard** | "Since your last visit": value moves and injury changes on your roster, trades and notable adds, newly available players and new breakout flags, with a *Mark all as seen* button. Also your window, ranks, sell candidates and positional outlook. Also a league table of every team's window, strength, picks, needs and tendency tags. |
+| **Matchup** | Your matchup (or any team's, any week) as it happens: both lineups with points (hover a score for how it adds up in your scoring) and each player's stat line, his game clock and whether his team has the ball, a live win chance, and every big play by anyone on either roster (touchdowns, turnovers, 20+ yard plays, 5+ point plays) with its fantasy points, plus in-game injuries (hurt on a play, ruled out or questionable to return). Flip through the plays, and open *Find clip on X* (video posts about that play from the NFL's and the teams' official accounts, posted within 30 minutes of it) or the game's highlights on YouTube. Refreshes every 30 seconds while games are on, with a pop-up for each new big play. |
 | **Lineup** | Start/sit for this week (any team): the lineup with the best chance to win, the changes to make in Sleeper, each player's projection and likely range, coin-flip decisions, injured or bye-week starters, free agents who'd start, and the opponent's best lineup. |
 | **Calendar** | Your league's key dates through next year's rookie draft (trade deadline, playoffs, NFL draft, roster cuts, rookie draft) and the months picks and players usually peak or bottom out in value, each with what to do then. |
 | **Offseason** | A checklist from the championship to next season, in order, with the players and picks each step is about: sell players at their winter high or before the age curve bites, decide on expiring contracts before free agency, sell picks in overpriced slots before the NFL draft, clear roster spots and trade for other teams' cut candidates before the rookie draft, and buy while values are low in summer. Tick items off as you go (saved in your browser). |
@@ -316,6 +319,14 @@ One install can hold several leagues. Each league you've opened is saved under *
 - Matchups barely carry over: points a defense allowed by position in weeks 1–8 correlate 0.18 with what it allows in weeks 9–17. The remaining schedule helps a little for RBs only (in the model); the fantasy-playoff schedule predicted nothing at any position.
 - Outlook per game = average of that model and Sleeper's projections for the remaining weeks (injuries, trades, depth charts), in the league's scoring. Games left = weeks Sleeper projects him to play. Lineup gain = the team's best lineup each remaining week with vs. without him.
 - Trade math: a contender's win-now value moves by 75% of the gap between the usage model and a points-only forecast, capped at ±15% (QBs not at all). It counts in a team's real gain, not in what managers are assumed to perceive. Suggestions, the deadline list and player notes call out second-half risers and sell-high fallers.
+
+**Matchup** (`app/live.py`, `app/espn.py`)
+- Points come from Sleeper's matchups (re-read at most every 30 seconds). Game clocks, possession and play-by-play come from ESPN's public scoreboard and game summaries (every 20 seconds while games are on). ESPN's feed is unofficial, so it can change without notice.
+- Win chance: each team's points so far plus each starter's projection for the share of his game still to play, with the Lineup page's week-to-week spread shrunk to match. Kickers and defenses use Sleeper's projected points.
+- Big plays: plays that name a rostered QB/RB/WR/TE on either team ("F.Last" in ESPN's text, on his team's offense), with the kick, conversion or penalty text cut off. Each play's fantasy points use the league's scoring for passing, receiving (with the TE bonus) and rushing yards and touchdowns, interceptions and lost fumbles; a fumble counts against the player named right before it. Interceptions count only for the passer, and a play is a receiver's only when he caught the ball.
+- Stat lines and score breakdowns come from Sleeper's weekly stats (which update during games) times the league's scoring settings.
+- Injuries: ESPN's play text notes who "was injured during the play", and the game's injury list gets rulings made after kickoff (out, doubtful or questionable to return). The injury's clip link searches X for any video post about it, since official accounts rarely post injuries. Return touchdowns and two-point plays aren't covered.
+- Clips: no free source hands out a clip per play (ESPN's game feeds carry no video, the X API charges per post read, and Reddit's API needs approval), so each play links to an X search instead: video posts from the play to 30 minutes after it, from the NFL's and his team's accounts, naming him (or, on a pass, its receiver, since captions usually name the catch). Turnovers show every video the two teams' own accounts posted in that window (not the NFL's, which posts every game's turnovers), since the defense usually posts them, often without his name or the word fumble. Injuries search any account for his full name and injury words. Open bench sections and the plays list's scroll position stay put through each refresh.
 
 **Track record** (`app/track.py`)
 - Start/sit: each completed week is replayed with that week's Sleeper projections (as Sleeper has them now, which may differ a little from before kickoff). The app's lineup is the most projected points from the players each team had that week, taxi players left out, scored with what they actually scored. QB/RB/WR/TE slots only.

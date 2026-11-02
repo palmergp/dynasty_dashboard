@@ -28,7 +28,7 @@ from .league import SLOT_ELIGIBLE
 SPREAD = {"QB": (5.34, 0.109), "RB": (3.45, 0.279), "WR": (2.99, 0.331), "TE": (2.05, 0.402)}
 CLOSE = 1.5            # points: decisions closer than this are coin flips
 OUT = {"Out", "IR", "PUP", "Sus", "NFI", "Doubtful"}
-_http = httpx.Client(timeout=45, headers={"User-Agent": "dynasty-trade-helper/1.0"})
+_http = httpx.Client(timeout=45, headers={"User-Agent": "front-office/1.0"})
 
 
 def _phi(x: float) -> float:
