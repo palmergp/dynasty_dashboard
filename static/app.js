@@ -1399,7 +1399,7 @@ const SIGNAL_HELP = {
 Object.assign(HELP, {
   breakout: "0–100. How strongly usage, depth-chart and contract signals point to a bigger role ahead. It's discounted for players who already have a full role, who are already valued as stars, or who are past age 25. Hover a player's signal tags for the specifics.",
   oppScore: "0–100. His current role: share of his team's opportunities at his position (carries + 1.5× targets, or dropbacks for QBs), blended with snap share over the last 3 games.",
-  pickupScore: "His value to your team (dynasty value adjusted for your window and positional needs, the same as in trades), plus a breakout allowance of up to 750 at a breakout score of 100.",
+  pickupScore: "His value to your team (dynasty value adjusted for your window and positional needs, the same as in trades), plus a breakout allowance of up to 750 at a breakout score of 100. A projected starter no value source has priced yet is valued like the cheaper starters at his position projected about the same.",
   snaps: "Share of his team's offensive snaps over his last 3 games (whole season below).",
   share: "His share of his team's weighted opportunities at his position over the last 3 games: carries + 1.5× targets, or dropbacks for QBs.",
   eff: "Fantasy points per opportunity vs. the median regular at his position, pooling this season and half of last season. 1.00× = median.",
@@ -1447,6 +1447,8 @@ async function breakoutsData() {
 }
 
 state.wire = { pos: "", q: "" };
+// Value cell; marks values estimated for projected starters no value source has priced yet.
+const wireValCell = a => `<td class="num" data-sort="${a.value}">${fmt(a.value)}${a.est ? ` <span class="badge" ${tipAttr(`Estimated: no value source has priced him yet. Projected to start in week ${a.proj.week} (${a.proj.pts} pts), so he's valued like the cheaper of the ${a.est.n} starting ${a.pos}s projected closest to him.`)}>est.</span>` : ""}</td>`;
 async function viewPickups() {
   const [W, ov] = await Promise.all([pickupsData(), overview()]);
   const season = ov.league.season;
@@ -1468,7 +1470,7 @@ async function viewPickups() {
       <thead><tr><th></th><th>Player</th><th class="num">Value</th><th class="num">${hint("Breakout", HELP.breakout)}</th><th class="num">${hint("Pickup score", HELP.pickupScore)}</th>
         <th>Why</th><th>${hint("Drop", HELP.drops)}</th><th class="num">${hint("Gain", HELP.gain)}</th><th class="num">${hint("Bid", HELP.bid)}</th></tr></thead>
       <tbody>${W.suggestions.map(s => { const a = s.asset;
-        return `<tr><td>${posBadge(a.pos)}</td>${playerCell(a)}<td class="num">${fmt(a.value)}</td>${boCell(a)}<td class="num"><b>${fmt(s.score)}</b></td>
+        return `<tr><td>${posBadge(a.pos)}</td>${playerCell(a)}${wireValCell(a)}${boCell(a)}<td class="num"><b>${fmt(s.score)}</b></td>
           <td class="small">${s.why.length ? `<ul class="notes" style="margin:0">${s.why.map(w => `<li>${esc(w)}</li>`).join("")}</ul>` : '<span class="muted">Best value available</span>'}</td>
           <td class="small">${dropTxt(s)}</td><td class="num delta-pos">+${fmt(s.gain)}</td>
           <td class="num" data-sort="${s.bid.mid}"><b>$${s.bid.mid}</b><div class="muted small">$${s.bid.lo}–$${s.bid.hi}</div></td></tr>`; }).join("")
@@ -1503,7 +1505,7 @@ function wirePickups(W, season) {
     const q = state.wire.q.toLowerCase(), pos = state.wire.pos;
     const rows = W.available.filter(r => (!pos || r.asset.pos === pos) && (!q || `${r.asset.name} ${r.asset.nfl_team}`.toLowerCase().includes(q))).slice(0, 200);
     $("#w-table tbody").innerHTML = rows.map(({ asset: a, score }) => `<tr><td>${posBadge(a.pos)}</td>${playerCell(a)}
-      <td class="num">${fmt(a.value)}</td><td class="num">${fmt(a.redraft)}</td>${boCell(a)}<td class="num">${a.opp_score ?? "–"}</td>${roleCells(a)}
+      ${wireValCell(a)}<td class="num">${fmt(a.redraft)}</td>${boCell(a)}<td class="num">${a.opp_score ?? "–"}</td>${roleCells(a)}
       ${depthCell(a)}${contractCell(a, season)}<td>${sigChips(a)}</td><td class="num"><b>${fmt(score)}</b></td></tr>`).join("")
       || '<tr><td colspan="14" class="muted">No matches.</td></tr>';
     makeSortable($("#w-table").parentElement);

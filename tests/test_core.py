@@ -573,3 +573,21 @@ def test_live_clip_search_is_specific_to_the_play():
     inj = q(live._x_url(["Lamar Jackson"], "BAL", "BUF", "injury", "2026-11-01T18:26Z", True))
     assert '"Lamar Jackson" (injury' in inj and "from:" not in inj                          # any account
     assert "since_time:1793556660 until_time:1793560260" in inj                      # an estimated time gets a wider window
+
+
+def test_projected_starters_and_unpriced_starter_price(monkeypatch):
+    from types import SimpleNamespace
+    from app import lineup, pickups
+    qbs = {"a": 20, "b": 15, "c": 14, "d": 12, "e": 11, "f": 10, "g": 9}   # starters; "z" backs up "g"
+    values = {"a": 9000, "b": 3000, "c": 1500, "d": 900, "e": 600, "f": 0, "g": 800, "z": 2000}
+    db = {p: {"position": "QB"} for p in [*qbs, "z"]}
+    proj = {p: {"stats": {"pts": v}, "team": f"T{p}"} for p, v in qbs.items()}
+    proj["z"] = {"stats": {"pts": 3}, "team": "Tg"}
+    lg = SimpleNamespace(season=2026, info={"scoring_settings": {"pts": 1}}, players_db=db,
+                         player_asset=lambda p: {"value": values[p], "redraft": values[p] // 2})
+    monkeypatch.setattr(lineup, "current_week", lambda lg: 9)
+    monkeypatch.setattr(lineup, "projections", lambda season, week: proj)
+    week, st = pickups.projected_starters(lg)
+    assert week == 9 and "z" not in st and st["f"] == 10
+    # f's five nearest priced starters: g (9), e (11), d (12), c (14), b (15); lower quartile = 2nd lowest.
+    assert pickups.starter_price(lg, "f", st) == {"value": 800, "redraft": 400, "n": 5}

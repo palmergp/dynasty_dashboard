@@ -223,6 +223,7 @@ One install can hold several leagues. Each league you've opened is saved under *
   - "Opening now" can't be backtested, because there's no injury history.
   - Isaiah Likely ranked in the top ~11% at the end of 2025.
 - **Pickup score** = his value to your team (dynasty value adjusted for your window and needs, as in trades) + a breakout allowance of up to 750.
+  - Projected starters (each NFL team's top-projected QB, RB and TE and top two WRs this week, from Sleeper's projections in league scoring) are flagged. One that no value source has priced yet, like an undrafted QB pressed into service after injuries, gets the lower quartile of the dynasty and win-now values of the five priced starters at his position projected closest to him, marked "est.".
   - The suggested drop is your active player with the lowest pickup score. Open roster or taxi spots are used first.
   - The suggested bid is the median winning bid on the 8 most similar-value claims in this league over the last two seasons.
 - **In trades:** rebuilding teams value breakout upside up to 15% more, and suggestions call out "buy before a breakout" targets. Player notes include contract and breakout signals.
