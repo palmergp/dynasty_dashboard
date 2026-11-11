@@ -1399,13 +1399,13 @@ const SIGNAL_HELP = {
 Object.assign(HELP, {
   breakout: "0–100. How strongly usage, depth-chart and contract signals point to a bigger role ahead. It's discounted for players who already have a full role, who are already valued as stars, or who are past age 25. Hover a player's signal tags for the specifics.",
   oppScore: "0–100. His current role: share of his team's opportunities at his position (carries + 1.5× targets, or dropbacks for QBs), blended with snap share over the last 3 games.",
-  pickupScore: "His value to your team (dynasty value adjusted for your window and positional needs, the same as in trades), plus a breakout allowance of up to 750 at a breakout score of 100. A projected starter no value source has priced yet is valued like the cheaper starters at his position projected about the same.",
+  pickupScore: "His value to your team (dynasty value adjusted for your window and positional needs, the same as in trades), plus a breakout allowance of up to 750 at a breakout score of 100. A projected starter no value source has priced yet (or a projected starting QB priced below that) is valued like the cheaper starters at his position projected about the same.",
   snaps: "Share of his team's offensive snaps over his last 3 games (whole season below).",
   share: "His share of his team's weighted opportunities at his position over the last 3 games: carries + 1.5× targets, or dropbacks for QBs.",
   eff: "Fantasy points per opportunity vs. the median regular at his position, pooling this season and half of last season. 1.00× = median.",
   depthChart: "His place on his NFL team's depth chart, ranked by opportunities per game (recent games weighted up), with Sleeper's depth chart as the tiebreaker.",
   contract: "Final season of his current contract (OverTheCap via nflverse) and its average annual value. Hover for whether he's likely to be back.",
-  bid: "Suggested FAAB bid: the median winning bid on the 8 most similar-value claims in this league over the last two seasons, with the middle half of those bids as the range.",
+  bid: "Suggested FAAB bid: the median winning bid on the 8 most similar-value claims in this league over the last two seasons, with the middle half of those bids as the range. Projected starting QBs (marked QB) are bid from past claims on QBs projected to start instead, since superflex managers pay for those whatever their value.",
   gain: "Pickup score of the player minus the pickup score of the player you'd drop.",
   drops: "Your lowest pickup scores among active (non-taxi, non-IR) players: the cheapest roster spots to open.",
   backtest: "The model run as it would have looked at the end of each past season (that season's usage, contracts in force then and values then), compared with values a year later. Players already worth 4,000+ are excluded. A hit gained 500+ value.",
@@ -1448,7 +1448,10 @@ async function breakoutsData() {
 
 state.wire = { pos: "", q: "" };
 // Value cell; marks values estimated for projected starters no value source has priced yet.
-const wireValCell = a => `<td class="num" data-sort="${a.value}">${fmt(a.value)}${a.est ? ` <span class="badge" ${tipAttr(`Estimated: no value source has priced him yet. Projected to start in week ${a.proj.week} (${a.proj.pts} pts), so he's valued like the cheaper of the ${a.est.n} starting ${a.pos}s projected closest to him.`)}>est.</span>` : ""}</td>`;
+const wireValCell = a => `<td class="num" data-sort="${a.value}">${fmt(a.value)}${a.est ? ` <span class="badge" ${tipAttr(`Estimated: ${a.est.market ? `his value sources still price him as a backup (${fmt(a.est.market)})` : "no value source has priced him yet"}. Projected to start in week ${a.proj.week} (${a.proj.pts} pts), so he's valued like the cheaper of the ${a.est.n} starting ${a.pos}s projected closest to him.`)}>est.</span>` : ""}</td>`;
+const bidCell = b => `<td class="num" data-sort="${b.mid}"${b.basis === "qb_starters" ? ` ${tipAttr(`Starting QB: bid from this league's ${b.n} past winning claims on QBs projected to start, not from his value. Median $${b.mid}, middle half $${b.lo}–$${b.hi}. Highest: ${b.top.join(", ")}.`)}` : ""}><b>$${b.mid}</b><div class="muted small">$${b.lo}–$${b.hi}${b.basis === "qb_starters" ? " · QB" : ""}</div></td>`;
+// Signal chips, led by a "Starts" chip for projected starters.
+const wireSigs = a => (a.proj ? `<span class="badge tag sig" ${tipAttr(`Projected to start for ${a.nfl_team} in week ${a.proj.week}: ${a.proj.pts} pts (Sleeper's projection in your league's scoring).`)}>Starts wk ${a.proj.week}</span> ` : "") + sigChips(a);
 async function viewPickups() {
   const [W, ov] = await Promise.all([pickupsData(), overview()]);
   const season = ov.league.season;
@@ -1473,7 +1476,7 @@ async function viewPickups() {
         return `<tr><td>${posBadge(a.pos)}</td>${playerCell(a)}${wireValCell(a)}${boCell(a)}<td class="num"><b>${fmt(s.score)}</b></td>
           <td class="small">${s.why.length ? `<ul class="notes" style="margin:0">${s.why.map(w => `<li>${esc(w)}</li>`).join("")}</ul>` : '<span class="muted">Best value available</span>'}</td>
           <td class="small">${dropTxt(s)}</td><td class="num delta-pos">+${fmt(s.gain)}</td>
-          <td class="num" data-sort="${s.bid.mid}"><b>$${s.bid.mid}</b><div class="muted small">$${s.bid.lo}–$${s.bid.hi}</div></td></tr>`; }).join("")
+          ${bidCell(s.bid)}</tr>`; }).join("")
         || '<tr><td colspan="9" class="muted">Nobody available beats the weakest player on your roster right now.</td></tr>'}</tbody>
     </table></div>
     <p class="muted small">Only players who beat your weakest active player by 50+ points are shown. Bids assume he's on waivers; once he clears, he's free.</p>
@@ -1495,7 +1498,7 @@ async function viewPickups() {
     <div class="scroll"><table id="w-table"><thead><tr><th></th><th>Player</th><th class="num">Value</th><th class="num">Win-now</th>
       <th class="num">${hint("Breakout", HELP.breakout)}</th><th class="num">${hint("Opp.", HELP.oppScore)}</th><th class="num">${hint("Snaps", HELP.snaps)}</th>
       <th class="num">${hint("Share", HELP.share)}</th><th class="num">PPG</th><th class="num">${hint("Eff.", HELP.eff)}</th><th>${hint("Depth", HELP.depthChart)}</th>
-      <th>${hint("Contract", HELP.contract)}</th><th>Signals</th><th class="num">${hint("Pickup score", HELP.pickupScore)}</th></tr></thead><tbody></tbody></table></div>
+      <th>${hint("Contract", HELP.contract)}</th><th>Signals</th><th class="num">${hint("Pickup score", HELP.pickupScore)}</th><th class="num">${hint("Bid", HELP.bid)}</th></tr></thead><tbody></tbody></table></div>
   </div>`;
 }
 function wirePickups(W, season) {
@@ -1504,10 +1507,10 @@ function wirePickups(W, season) {
     state.wire.q = $("#w-q").value; state.wire.pos = $("#w-pos").value;
     const q = state.wire.q.toLowerCase(), pos = state.wire.pos;
     const rows = W.available.filter(r => (!pos || r.asset.pos === pos) && (!q || `${r.asset.name} ${r.asset.nfl_team}`.toLowerCase().includes(q))).slice(0, 200);
-    $("#w-table tbody").innerHTML = rows.map(({ asset: a, score }) => `<tr><td>${posBadge(a.pos)}</td>${playerCell(a)}
+    $("#w-table tbody").innerHTML = rows.map(({ asset: a, score, bid }) => `<tr><td>${posBadge(a.pos)}</td>${playerCell(a)}
       ${wireValCell(a)}<td class="num">${fmt(a.redraft)}</td>${boCell(a)}<td class="num">${a.opp_score ?? "–"}</td>${roleCells(a)}
-      ${depthCell(a)}${contractCell(a, season)}<td>${sigChips(a)}</td><td class="num"><b>${fmt(score)}</b></td></tr>`).join("")
-      || '<tr><td colspan="14" class="muted">No matches.</td></tr>';
+      ${depthCell(a)}${contractCell(a, season)}<td>${wireSigs(a)}</td><td class="num"><b>${fmt(score)}</b></td>${bidCell(bid)}</tr>`).join("")
+      || '<tr><td colspan="15" class="muted">No matches.</td></tr>';
     makeSortable($("#w-table").parentElement);
   };
   ["#w-q", "#w-pos"].forEach(s => $(s).addEventListener("input", draw));

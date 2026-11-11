@@ -586,8 +586,25 @@ def test_projected_starters_and_unpriced_starter_price(monkeypatch):
     lg = SimpleNamespace(season=2026, info={"scoring_settings": {"pts": 1}}, players_db=db,
                          player_asset=lambda p: {"value": values[p], "redraft": values[p] // 2})
     monkeypatch.setattr(lineup, "current_week", lambda lg: 9)
-    monkeypatch.setattr(lineup, "projections", lambda season, week: proj)
+    monkeypatch.setattr(lineup, "projections", lambda season, week, ttl=0: proj)
     week, st = pickups.projected_starters(lg)
     assert week == 9 and "z" not in st and st["f"] == 10
     # f's five nearest priced starters: g (9), e (11), d (12), c (14), b (15); lower quartile = 2nd lowest.
     assert pickups.starter_price(lg, "f", st) == {"value": 800, "redraft": 400, "n": 5}
+
+
+def test_starter_qb_claims_match_claim_week_or_next(monkeypatch):
+    from types import SimpleNamespace
+    from app import lineup, pickups
+    db = {"q1": {"position": "QB"}, "q2": {"position": "QB"}, "q3": {"position": "QB"}, "s1": {"position": "QB"}}
+    # q1 starts in week 4, q2 only in week 5 (named the starter a week later), q3 never.
+    proj = {4: {"q1": 15, "s1": 20, "q3": 2}, 5: {"q2": 14, "s1": 3}}
+    teams = {"q1": "A", "s1": "B", "q2": "B", "q3": "B"}
+    monkeypatch.setattr(lineup, "current_week", lambda lg: 9)
+    monkeypatch.setattr(lineup, "projections", lambda season, week, ttl=0: {
+        p: {"stats": {"pts": v}, "team": teams[p]} for p, v in proj.get(week, {}).items()})
+    lg = SimpleNamespace(season=2026, info={"scoring_settings": {"pts": 1}}, players_db=db)
+    claim = lambda pid, bid, week=4, typ="claim": {"type": typ, "pos": "QB", "season": 2026, "week": week, "player_id": pid, "name": pid, "bid": bid}
+    got = pickups.starter_qb_claims(lg, [claim("q1", 30), claim("q2", 12), claim("q3", 50), claim("q1", 9, typ="free_agent"), claim("q1", 7, week=None)])
+    assert [c["bid"] for c in got] == [30, 12]
+    assert pickups._bid_range([30, 12, 5, 40, 21], 25) == {"mid": 21, "lo": 12, "hi": 25, "n": 5}

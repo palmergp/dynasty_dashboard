@@ -35,15 +35,16 @@ def _phi(x: float) -> float:
     return 0.5 * (1 + math.erf(x / math.sqrt(2)))
 
 
-def projections(season: int, week: int) -> dict:
-    """player_id -> {stats, date, team, opp} for QB/RB/WR/TE (cached 3 hours)."""
+def projections(season: int, week: int, ttl: int = 3 * 3600) -> dict:
+    """player_id -> {stats, date, team, opp} for QB/RB/WR/TE (cached 3 hours by default;
+    pass a long ttl for past weeks, which no longer change)."""
     def fetch():
         url = (f"https://api.sleeper.com/projections/nfl/{season}/{week}?season_type=regular"
                "&position[]=QB&position[]=RB&position[]=WR&position[]=TE")
         rows = _http.get(url).json() or []
         return {r["player_id"]: {"stats": r.get("stats") or {}, "date": r.get("date"), "team": r.get("team"), "opp": r.get("opponent")}
                 for r in rows if r.get("player_id")}
-    return cached(f"proj2:{season}:{week}", 3 * 3600, fetch)
+    return cached(f"proj2:{season}:{week}", ttl, fetch)
 
 
 def score(stats: dict, scoring: dict) -> float:
