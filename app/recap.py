@@ -241,7 +241,7 @@ def analyze(lg, week: int | None = None) -> dict:
     for tx in sleeper.transactions(lid, week):
         if tx.get("type") == "waiver" and tx.get("status") == "complete" and (tx.get("settings") or {}).get("waiver_bid"):
             for pid, rid in (tx.get("adds") or {}).items():
-                bids.append({"bid": tx["settings"]["waiver_bid"], "player": pname(pid), "pos": _pos(lg, pid), "manager": name(rid)})
+                bids.append({"bid": tx["settings"]["waiver_bid"], "player": pname(pid), "player_id": pid, "pos": _pos(lg, pid), "manager": name(rid)})
     bids.sort(key=lambda b: -b["bid"])
     movers = _movers(lg, week)
 

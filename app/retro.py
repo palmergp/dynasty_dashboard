@@ -99,7 +99,7 @@ def analyze(lg) -> dict:
             if a.get("drafted") or a["kind"] == "player":
                 did = a.get("drafted") or a["id"]
                 info = lg.players_db.get(did) or {}
-                a["pick"].update(became=info.get("full_name") or did, became_pos=info.get("position") or "?")
+                a["pick"].update(became=info.get("full_name") or did, became_id=did, became_pos=info.get("position") or "?")
             if a["kind"] == "player":  # startup pick: the player taken
                 vals, pid = player_vals(a["id"]), a["id"]
                 pts = held_points(to, pid, ms, start)

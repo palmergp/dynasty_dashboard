@@ -35,16 +35,18 @@ ROUTES = {
     "#/draftday": "<h1>Draft day", "#/matchup": "<h1>Matchup", "#/draftday/replay": "Before pick",
 }
 # Cards that load after the page renders: route -> text that appears once they've loaded.
-LATE = {"#/deadline": ("By position and age", "Vs. similar players"), "#/settings": (" OK</span>",), "#/future": ("Rank after",),
+LATE = {"#/deadline": ("By position and age", "Vs. similar players"), "#/trade": ("How they trade",), "#/settings": (" OK</span>",), "#/future": ("Rank after",),
         "#/prices": ("Avg. result on KTC",), "#/buylow": ("Vs. similar players",)}
 API = ["overview", "players", "picks", "suggestions", "drafts", "rankings", "waivers", "pickups", "breakouts",
        "backtest", "season", "draft-prep", "trade-review", "records", "trades", "feed", "status", "team/1",
        "deadline", "buylow", "future", "pick-timing", "league-prices", "phone",
        "target", "calculators", "checks", "recap", "roster-room", "rookie-hits", "seasonal", "calendar", "health", "lineup", "secondhalf",
-       "track-record", "draftday", "draftday?replay=1", "offseason", "matchup"]
+       "track-record", "draftday", "draftday?replay=1", "offseason", "matchup", "scout?b=1", "rookie-classes"]
 
 
 def _browser() -> str | None:
+    if os.environ.get("SMOKE_BROWSER"):  # e.g. Chrome while a pending Edge update breaks headless Edge
+        return os.environ["SMOKE_BROWSER"]
     for name in ("msedge", "chrome", "google-chrome", "chromium", "chromium-browser"):
         if shutil.which(name):
             return shutil.which(name)
@@ -90,6 +92,14 @@ def test_api(server, path):
         json.loads(r.read())
 
 
+def test_player_stats(server):
+    with urllib.request.urlopen(f"{server}/api/players", timeout=600) as r:
+        pid = json.loads(r.read())[0]["id"]
+    with urllib.request.urlopen(f"{server}/api/player/{pid}/stats", timeout=600) as r:
+        out = json.loads(r.read())
+    assert out["season"] and (out["games"] is None or len(out["games"]) == out["weeks"])
+
+
 @pytest.mark.parametrize("path", ["evaluate", "trade-impact", "pitch", "counter"])
 def test_trade_posts(server, path):
     with urllib.request.urlopen(f"{server}/api/players", timeout=600) as r:
@@ -119,6 +129,11 @@ def test_plan_post(server):
     with urllib.request.urlopen(req, timeout=600) as r:
         out = json.loads(r.read())
     assert [t["skipped"] for t in out["trades"]] == [False, True] and out["problems"]
+    assert [c["trades"] for c in out["conflicts"]] == [[0, 1]] and out["conflicts"][0]["pick"] == 0
+    req = urllib.request.Request(f"{server}/api/plan/next", data=body, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=600) as r:
+        nxt = json.loads(r.read())
+    assert nxt["applied"] == 1 and all(t["roster_id"] != me for t in nxt["suggestions"])
 
 
 @pytest.mark.parametrize("path", ["static/manifest.json", "static/icon-192.png", "static/apple-touch-icon.png", "static/logo.svg"])
@@ -145,6 +160,8 @@ def test_page(server, route):
         marker = ROUTES[route]
     dom = _dom(browser, f"{server}/{route}")
     assert marker in dom, f"{route}: page didn't render (missing '{marker}')"
+    if route.startswith("#/player/"):
+        assert "Game log" in dom, f"{route}: the season stats card didn't load"
     for late in LATE.get(route, ()):
         assert late in dom, f"{route}: a card that loads after the page didn't render (missing '{late}')"
     assert "data-js-error" not in dom, f"{route}: JavaScript error"

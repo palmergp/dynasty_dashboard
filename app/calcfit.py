@@ -258,8 +258,8 @@ def gaps(lg, them: dict, mine: list, theirs: list, limit: int = 3) -> dict | Non
         return v / a["value"] if v and a["value"] >= 1000 else None
     offer = sorted((a for a in mine if (ratio(a) or 0) >= 1.10), key=lambda a: -ratio(a))[:limit]
     ask = sorted((a for a in theirs if 0 < (ratio(a) or 9) <= 0.90), key=lambda a: ratio(a))[:limit]
-    return {"source": lean, "offer": [{"name": a["name"], "pct": round((ratio(a) - 1) * 100)} for a in offer],
-            "ask": [{"name": a["name"], "pct": round((ratio(a) - 1) * 100)} for a in ask]}
+    row = lambda a: {"kind": a["kind"], "id": a["id"], "name": a["name"], "pos": a.get("pos"), "pct": round((ratio(a) - 1) * 100)}
+    return {"source": lean, "offer": [row(a) for a in offer], "ask": [row(a) for a in ask]}
 
 
 def tendencies_calc(lg, team: dict) -> dict | None:

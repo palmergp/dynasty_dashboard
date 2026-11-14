@@ -608,3 +608,92 @@ def test_starter_qb_claims_match_claim_week_or_next(monkeypatch):
     got = pickups.starter_qb_claims(lg, [claim("q1", 30), claim("q2", 12), claim("q3", 50), claim("q1", 9, typ="free_agent"), claim("q1", 7, week=None)])
     assert [c["bid"] for c in got] == [30, 12]
     assert pickups._bid_range([30, 12, 5, 40, 21], 25) == {"mid": 21, "lo": 12, "hi": 25, "n": 5}
+
+
+def test_rising_free_agents():
+    from app.pickups import rising
+    row = lambda name, **a: {"asset": {"name": name, "value": 800, "sources": {}, "trend": None, "breakout": 0, "opp": None, "nfl_team": "MIA", **a}, "score": 0, "bid": {}}
+    avail = [
+        row("starter", est={"market": 237}, proj={"week": 10, "pts": 12.4}),
+        row("climber", trend=300, sources={"fantasycalc": 900}),            # 600 -> 900: +50%
+        row("noise", trend=700, sources={"fantasycalc": 709}),              # from ~0: ignored
+        row("role", breakout=45, opp={"notes": [{"key": "rising", "text": "Role rising"}]}),
+        row("weak role", breakout=20, opp={"notes": [{"key": "rising", "text": "Role rising"}]}),
+    ]
+    got = {r["asset"]["name"]: r["rising_why"] for r in rising(avail)}
+    assert set(got) == {"starter", "climber", "role"}
+    assert got["climber"] == ["Market value up 50% in the last 30 days"]
+    assert "still priced as a backup" in got["starter"][0]
+
+
+def test_player_game_log_ranks_and_byes(monkeypatch):
+    from types import SimpleNamespace
+    from app import opportunity, playerstats, sleeper
+    db = {p: {"position": "WR", "team": t} for p, t in (("a", "A"), ("b", "B"), ("c", "C"))}
+    box = lambda team, opp, pts, **st: {"team": team, "opp": opp, "date": None, "stats": {"gp": 1, "pts": pts, **st}}
+    weeks = {1: {"a": box("A", "B", 10, off_snp=30, tm_off_snp=60, rec=3, rec_tgt=5, rec_yd=40), "b": box("B", "A", 20), "c": box("C", "D", 5)},
+             2: {"b": box("B", "C", 8), "c": box("C", "B", 12)},                      # A on bye
+             3: {"b": box("B", "A", 4), "c": box("C", "D", 6)}}                       # A played (B's opponent), "a" didn't
+    monkeypatch.setattr(opportunity, "weeks_done", lambda season: [1, 2, 3])
+    monkeypatch.setattr(sleeper, "nfl_state", lambda: {"season": "2026"})
+    monkeypatch.setattr(playerstats, "week_stats", lambda season, week, ttl: weeks[week])
+    monkeypatch.setattr(playerstats.lineup, "projections", lambda season, week, ttl=0: {"a": {"stats": {"pts": 12}}} if week == 1 else {})
+    lg = SimpleNamespace(season=2026, info={"scoring_settings": {"pts": 1}}, players_db=db)
+    S = playerstats.build(lg, 2026)
+    P = playerstats.player(lg, "a", S)
+    assert [g["status"] for g in P["games"]] == ["played", "bye", "out"]
+    assert P["games"][0] | {"line": None} == {"week": 1, "status": "played", "opp": "B", "team": "A", "pts": 10, "proj": 12, "rank": 2,
+                                               "line": None, "snap_pct": 50}
+    # Season: b 32 (10.7 a game), c 23 (7.7), a 10 (10.0, and 1 game is half of 3 weeks, rounded down).
+    assert (P["gp"], P["pts"], P["pts_rank"], P["ppg_rank"], P["top12"], P["beat_proj"], P["n_proj"]) == (1, 10, 3, 2, 1, 0, 1)
+    assert P["line"] == "3/5 rec, 40 yds" and P["per_game"] == {"rec_tgt": 5, "rec": 3, "rec_yd": 40}
+
+
+def test_planned_league_moves_rosters_and_redoes_needs():
+    from types import SimpleNamespace
+    from app import plan
+    from app.league import League
+    P = lambda pid, pos, v, rid: {"kind": "player", "id": pid, "name": pid, "pos": pos, "value": v, "redraft": v, "age": 25,
+                                  "taxi": False, "ir": False, "roster_id": rid}
+    teams = {1: {"roster_id": 1, "players": [P("q1", "QB", 6000, 1), P("r1", "RB", 2000, 1)], "picks": [], "w": 0.6},
+             2: {"roster_id": 2, "players": [P("q2", "QB", 3000, 2), P("r2", "RB", 5000, 2)], "picks": [], "w": 0.6}}
+    lg = SimpleNamespace(teams=teams, slots=["QB", "RB"], superflex=False, _needs_text=lambda t: League._needs_text(None, t))
+    League._lineup(lg, teams[1]); League._lineup(lg, teams[2]); League._position_strength(lg)
+    lg.me = teams[1]
+    assert teams[1]["need_now"]["RB"] > 0 > teams[1]["need_now"]["QB"]
+    own, assets = plan._ownership(lg)
+    own[("player", "q1")], own[("player", "r2")] = 2, 1          # q1 for r2
+    view = plan.Planned(lg, own, assets)
+    assert sorted(a["id"] for a in view.me["players"]) == ["r1", "r2"]
+    assert view.me["need_now"]["QB"] > 0 > view.me["need_now"]["RB"] and view.me["needs"] == ["QB"]
+    assert next(a for a in view.teams[2]["players"] if a["id"] == "q1")["roster_id"] == 2
+    # The real league is unchanged.
+    assert [a["id"] for a in teams[1]["players"]] == ["q1", "r1"] and teams[1]["need_now"]["RB"] > 0
+    assert assets[("player", "q1")]["roster_id"] == 1 and assets[("player", "r2")]["starter"]
+
+
+def test_plan_overlaps_are_shared_sends_not_chains():
+    from types import SimpleNamespace
+    from app import plan
+    P = lambda pid: {"kind": "player", "id": pid, "name": pid.upper()}
+    lg = SimpleNamespace(teams={1: {"roster_id": 1, "players": [P("a"), P("b")], "picks": []},
+                                2: {"roster_id": 2, "players": [P("c")], "picks": []},
+                                3: {"roster_id": 3, "players": [P("d")], "picks": []}})
+    ref = lambda *ids: [{"kind": "player", "id": i} for i in ids]
+    trades = [{"b_rid": 2, "a_gives": ref("a"), "b_gives": ref("c")},   # a for c
+              {"b_rid": 3, "a_gives": ref("a"), "b_gives": ref("d")},   # a again: an alternative
+              {"b_rid": 3, "a_gives": ref("c", "b"), "b_gives": []}]    # sends on c: a chain, not an overlap
+    assert plan._overlaps(lg, trades) == [(0, 1, ["A"])]
+
+
+def test_typical_rookie_class_mix():
+    from app import rookieclass
+    # Two past 2-team classes (top 2 = 1st round, top 4 = rounds 1-2).
+    pk = lambda cls, pos, v: {"cls": cls, "pos": pos, "value": v}
+    picks = [pk(2020, "QB", 90), pk(2020, "WR", 80), pk(2020, "RB", 20), pk(2020, "RB", 10),
+             pk(2021, "WR", 70), pk(2021, "WR", 60), pk(2021, "QB", 40), pk(2021, "TE", 30), pk(2021, "TE", 1)]
+    t = rookieclass.typical({"picks": picks}, 2)
+    assert t["classes"] == 2 and t["r1"] == {"QB": 0.5, "RB": 0, "WR": 1.5, "TE": 0}
+    assert t["r12"] == {"QB": 1, "RB": 1, "WR": 1.5, "TE": 0.5}
+    assert t["share"]["QB"] == round((90 / 200 + 40 / 200) * 100 / 2, 1)
+    assert rookieclass.typical(None, 2) is None

@@ -12,8 +12,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (agenda, buylow, checks, config, counter, deadline, draftday, draftprep, drafts, feed, future, health, lineup, live, market,
-               offseason, opportunity, pickhistory, pickups, pitch, plan, rankings, recap, records, retro, roster, season, seasonal,
+from . import (agenda, buylow, calcfit, checks, config, counter, deadline, draftday, draftprep, drafts, feed, future, health, lineup, live, market,
+               offseason, opportunity, pickhistory, pickups, pitch, plan, playerstats, rankings, recap, records, retro, rookieclass, roster, season, seasonal,
                secondhalf, store, suggest, target, track, trade, waivers)
 from .config import ROOT
 from .league import League
@@ -167,6 +167,16 @@ def player(pid: str):
     })
 
 
+@app.get("/api/player/{pid}/stats")
+def player_stats(pid: str):
+    """His game log and season totals (this season, or last until week 1 is done)."""
+    lg = league()
+    if pid not in lg.players_db:
+        raise HTTPException(404, "No such player")
+    S = _memo("season-stats", lg, lambda: playerstats.build(lg, playerstats.stats_season(lg)))
+    return _clean(playerstats.player(lg, pid, S) or {"season": S["season"], "games": None})
+
+
 @app.get("/api/picks")
 def picks():
     lg = league()
@@ -227,6 +237,15 @@ def trade_plan(body: PlanIn):
     if not lg.me:
         raise HTTPException(400, "Your username wasn't found in the league; check Settings.")
     return _clean(plan.run(lg, [t.model_dump() for t in body.trades]))
+
+
+@app.post("/api/plan/next")
+def plan_next(body: PlanIn):
+    """Trade suggestions assuming the plan's trades go through."""
+    lg = league()
+    if not lg.me:
+        raise HTTPException(400, "Your username wasn't found in the league; check Settings.")
+    return _clean(plan.next_trades(lg, [t.model_dump() for t in body.trades]))
 
 
 @app.post("/api/trade-impact")
@@ -370,6 +389,19 @@ def draft_prep():
     return _memo("draftprep", lg, lambda: _clean(draftprep.analyze(lg, _season(lg))))
 
 
+@app.get("/api/rookie-classes")
+def rookie_classes():
+    """The next two rookie classes: position make-up vs. past classes, and what your picks
+    in each are likely to land (KTC devy rankings + mock drafts)."""
+    lg = league()
+    if not lg.me:
+        raise HTTPException(400, "Your username wasn't found in the league; check Settings.")
+    try:
+        return _memo("rookieclasses", lg, lambda: _clean(rookieclass.analyze(lg, _season(lg))))
+    except Exception as e:  # KTC's devy page is an extra
+        return {"classes": [], "error": f"{type(e).__name__}: {e}"}
+
+
 @app.get("/api/deadline")
 def deadline_report():
     lg = league()
@@ -414,6 +446,28 @@ def target_report(year: int | None = None):
 def calculators():
     lg = league()
     return {**_clean(lg.calcfit), "error": lg.calcfit_error}
+
+
+@app.get("/api/scout")
+def scout(b: int, a: int | None = None):
+    """Team B as a trade partner for team A (default: you): playoff odds, the calculator their
+    trades lean toward, and A's assets it rates above the consensus and B's it rates below."""
+    lg = league()
+    them = lg.teams.get(b)
+    if not them:
+        raise HTTPException(404, "No such team")
+    mine = lg.teams.get(a) if a is not None else lg.me
+    cf = next((m for m in lg.calcfit["managers"] if m["roster_id"] == b), None)
+    try:
+        odds = next((t for t in _season(lg)["teams"] if t["roster_id"] == b), None)
+    except Exception:  # odds are a bonus on this card
+        odds = None
+    gaps = calcfit.gaps(lg, them, mine["players"] + mine["picks"], them["players"] + them["picks"], limit=6) if mine and mine is not them else None
+    return _clean({
+        "calc": {k: cf[k] for k in ("lean", "strength", "n", "avg_gain")} if cf else None,
+        "min_trades": lg.calcfit.get("min_trades"), "calc_error": lg.calcfit_error, "gaps": gaps,
+        "odds": {k: odds[k] for k in ("playoff_pct", "title_pct", "proj_wins", "avg_slot")} if odds else None,
+    })
 
 
 @app.get("/api/checks")
@@ -673,6 +727,17 @@ def set_config(body: dict):
 def refresh():
     league(force=True)
     return {"ok": True, "built": _state["built"]}
+
+
+@app.middleware("http")
+async def revalidate_pages(request, call_next):
+    """The page and its scripts must be rechecked on every load: without this, browsers
+    (and home-screen apps) keep running an old app.js against a newer server. Unchanged
+    files still come back as a quick 304 through their ETag."""
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")

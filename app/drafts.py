@@ -166,8 +166,8 @@ def analyze(lg) -> dict:
                 "retained": sum(p["on_roster"] for p in ps), "in_league": sum(p["in_league"] for p in ps),
                 "retained_pct": round(sum(p["on_roster"] for p in ps) / len(ps) * 100),
                 "retained_value": round(sum(p["now_value"] for p in ps if p["on_roster"])),
-                "best": {"name": best["name"], "pos": best["pos"], "change": best["change"]},
-                "worst": {"name": worst["name"], "pos": worst["pos"], "change": worst["change"]},
+                "best": {"player_id": best.get("player_id"), "name": best["name"], "pos": best["pos"], "change": best["change"]},
+                "worst": {"player_id": worst.get("player_id"), "name": worst["name"], "pos": worst["pos"], "change": worst["change"]},
                 "series": tot, "index": idx,
             }
         teams.append({"roster_id": rid, "manager": t["manager"], "team_name": t["team_name"], "drafts": per})

@@ -32,6 +32,9 @@ from .trade import _roster_limit, context_value
 ALLOWANCE = 750
 COMPS = 5              # comparable starters for an unpriced projected starter
 MIN_QB_CLAIMS = 5      # past starting-QB claims needed to bid from them
+RISE_PCT = 0.25        # "rising" free agents: FantasyCalc value up this much over 30 days...
+RISE_MIN = 400         # ...from at least this (below it the trends are noise)
+RISE_BREAKOUT = 40     # ...or a growing role with at least this breakout score
 PAST_TTL = 30 * 86400  # past weeks' projections don't change
 
 
@@ -96,6 +99,30 @@ def starter_price(lg, pid: str, starters: dict) -> dict | None:
         return None
     lq = lambda xs: sorted(xs)[len(xs) // 4]
     return {"value": lq([c["value"] for c in comps]), "redraft": lq([c["redraft"] for c in comps]), "n": len(comps)}
+
+
+def rising(avail: list[dict], n: int = 5) -> list[dict]:
+    """Available players whose value is rising or about to: projected starters the market still
+    prices below comparable starters, a 30-day market climb, or a growing role. Best pickup
+    score first, each with the reasons."""
+    out = []
+    for r in avail:
+        a, why = r["asset"], []
+        if a.get("est"):
+            why.append(f"Projected to start for {a['nfl_team']} in week {a['proj']['week']} ({a['proj']['pts']} pts) "
+                       + ("but still priced as a backup" if a["est"]["market"] else "but not yet priced by any value source"))
+        # The 30-day trend is FantasyCalc's, so measure it against FantasyCalc's value.
+        t, fc = a.get("trend"), (a.get("sources") or {}).get("fantasycalc")
+        if t and fc and fc - t >= RISE_MIN and t / (fc - t) >= RISE_PCT:
+            why.append(f"Market value up {t / (fc - t):.0%} in the last 30 days")
+        notes = {n["key"]: n["text"] for n in (a.get("opp") or {}).get("notes", [])}
+        if a.get("breakout", 0) >= RISE_BREAKOUT and ("rising" in notes or "vacancy_now" in notes):
+            why.append(notes.get("rising") or notes["vacancy_now"])
+        if why:
+            out.append({**r, "rising_why": why})
+            if len(out) >= n:
+                break
+    return out
 
 
 def suggest(lg, waiver_report: dict) -> dict:
@@ -165,5 +192,5 @@ def suggest(lg, waiver_report: dict) -> dict:
             break
     return {"budget": budget, "faab_left": left, "roster_limit": limit, "active": len(active),
             "open_spots": open_spots, "open_taxi": open_taxi, "taxi_years": taxi_years,
-            "drops": drops[:6], "suggestions": out, "available": avail[:300],
+            "drops": drops[:6], "suggestions": out, "rising": rising(avail), "available": avail[:300],
             "n_claims": len(claims), "proj_week": week, "qb_claims": sorted(qb_claims, key=lambda c: -c["bid"]), "weeks": lg.opportunity.get("weeks"), "role_season": lg.opportunity.get("role_season")}

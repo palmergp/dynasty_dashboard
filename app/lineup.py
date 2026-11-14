@@ -167,8 +167,8 @@ def analyze(lg, rid: int | None = None, week: int | None = None) -> dict:
     start = sorted((p for p in rec.values() if p["id"] not in cur_ids), key=lambda p: -p["proj"])
     sit = sorted((p for p in current.values() if p["id"] not in rec_ids), key=lambda p: p["proj"])
     why = lambda p: "on bye" if p["bye"] else p["injury"] if p["injury"] in OUT else None
-    changes = {"start": [{"name": p["name"], "pos": p["pos"], "proj": p["proj"]} for p in start],
-               "sit": [{"name": p["name"], "pos": p["pos"], "proj": p["proj"], "why": why(p)} for p in sit]} if start or sit else None
+    changes = {"start": [{"id": p["id"], "name": p["name"], "pos": p["pos"], "proj": p["proj"]} for p in start],
+               "sit": [{"id": p["id"], "name": p["name"], "pos": p["pos"], "proj": p["proj"], "why": why(p)} for p in sit]} if start or sit else None
     flags = [f"{p['name']} is {p['injury']}" for p in rec.values() if p["injury"] in OUT] +             [f"{p['name']} is on bye" for p in rec.values() if p["bye"]]
 
     # Close calls among the recommended starters and bench.

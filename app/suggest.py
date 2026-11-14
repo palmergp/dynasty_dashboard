@@ -38,14 +38,16 @@ def _combos(pool, max_n):
         yield from combinations(pool, n)
 
 
-def for_partner(lg, partner_rid: int, limit: int = 4) -> list[dict]:
+def for_partner(lg, partner_rid: int, limit: int = 4, exclude: set = frozenset()) -> list[dict]:
+    """Packages with one partner; `exclude` holds (kind, id) pairs to leave out of both sides."""
     me = lg.me
     them = lg.teams[partner_rid]
     p = lg.cfg["consolidation_exponent"]
     tend = lg.tendencies.get(them["owner_id"]) or {}
     mv = lg.cfg["suggestion_min_value"]
-    give_pool = _pool(me["players"] + me["picks"], me, them, tend, mv, True, MAX_GIVE_POOL)
-    get_pool = _pool(them["players"] + them["picks"], me, them, tend, mv, False, MAX_GET_POOL)
+    ok = lambda xs: [a for a in xs if (a["kind"], a["id"]) not in exclude]
+    give_pool = _pool(ok(me["players"] + me["picks"]), me, them, tend, mv, True, MAX_GIVE_POOL)
+    get_pool = _pool(ok(them["players"] + them["picks"]), me, them, tend, mv, False, MAX_GET_POOL)
 
     my_cut, their_cut = roster_cost_fn(lg, me), roster_cost_fn(lg, them)
     cands = []

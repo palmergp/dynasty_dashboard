@@ -189,13 +189,13 @@ def analyze(lg) -> dict:
                                        key=lambda c: -sign * c["change_pct"])[:TOP]
     steals = sorted(D["picks"], key=lambda p: -p["change"])[:TOP]
     busts = sorted(D["picks"], key=lambda p: p["change"])[:TOP]
-    pick_row = lambda p: {"name": p["name"], "pos": p["pos"], "manager": p["manager"], "draft": p["draft"],
+    pick_row = lambda p: {"player_id": p.get("player_id"), "name": p["name"], "pos": p["pos"], "manager": p["manager"], "draft": p["draft"],
                           "pick": f"Rd {p['round']}, #{p['pick_no']}", "draft_value": p["draft_value"], "now_value": p["now_value"],
                           "change": p["change"]}
 
     # ---- pickups
     W = waivers.analyze(lg)
-    pk = lambda p: {"name": p["name"], "pos": p["pos"], "manager": p["manager"], "date": p["date"], "bid": p["bid"],
+    pk = lambda p: {"player_id": p.get("player_id"), "name": p["name"], "pos": p["pos"], "manager": p["manager"], "date": p["date"], "bid": p["bid"],
                     "type": p["type"], "captured": p["captured"], "start_points": p["start_points"], "starts": p["starts"],
                     "value_at_pickup": p["value_at_pickup"], "outcome": p["outcome"]}
     pickups = W["pickups"]

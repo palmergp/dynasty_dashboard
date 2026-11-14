@@ -154,7 +154,7 @@ function assetLine(a, opts = {}) {
   const notes = opts.notes && a.notes && a.notes.length ? `<ul class="notes">${a.notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>` : "";
   return `<div class="asset ${opts.cls || ""}" data-kind="${a.kind}" data-id="${esc(a.id)}">
     ${posBadge(a.pos)}
-    <div class="name">${esc(a.name)} <span class="muted small">${assetMeta(a)}</span>${notes}</div>
+    <div class="name">${opts.nolink ? esc(a.name) : pName(a)} <span class="muted small">${assetMeta(a)}</span>${notes}</div>
     <span class="val" ${tipAttr(sourceTitle(a), false)}>${fmt(a.value)}</span>
   </div>`;
 }
@@ -190,6 +190,7 @@ async function viewDashboard() {
   return `
     ${errs.length ? `<div class="warnbox">Some value sources failed and were skipped: ${errs.map(([k, v]) => `${k} (${esc(v)})`).join("; ")}</div>` : ""}
     ${me ? `<div class="card" id="dash-feed"><h2>Since your last visit</h2><p class="muted">Checking for changes…</p></div>` : ""}
+    <div id="dash-rising"></div>
     ${me ? `<div class="card">
       <div class="row spread">
         <div><h1>${esc(me.manager)} ${windowBadge(me.window, me.window_source)}</h1>
@@ -259,7 +260,7 @@ async function dashFeed() {
       const xs = F.items.filter(x => x.kind === k);
       if (!xs.length) return "";
       return `<div><h3>${label} <span class="muted small">${xs.length}</span></h3><ul class="feed">${xs.slice(0, 8).map(x => `<li class="${x.mine ? "mine" : ""}">
-        ${x.pos ? posBadge(x.pos) + " " : ""}${x.name ? `<b>${esc(x.name)}</b> ` : ""}<span class="${x.delta > 0 ? "delta-pos" : x.delta < 0 ? "delta-neg" : "muted"}">${x.date ? esc(x.date) + " · " : ""}${esc(x.text)}</span></li>`).join("")}
+        ${x.pos ? posBadge(x.pos) + " " : ""}${x.name ? `<b>${pName(x)}</b> ` : ""}<span class="${x.delta > 0 ? "delta-pos" : x.delta < 0 ? "delta-neg" : "muted"}">${x.date ? esc(x.date) + " · " : ""}${esc(x.text)}</span></li>`).join("")}
         ${xs.length > 8 ? `<li class="muted">+${xs.length - 8} more</li>` : ""}</ul></div>`;
     }).join("")}</div>`;
   host.innerHTML = head + body;
@@ -295,8 +296,14 @@ async function dashOpportunity(me) {
   catch (e) { if (host) host.innerHTML = `<h2>Free agents &amp; breakout targets</h2><div class="warnbox">${esc(e.message)}</div>`; return; }
   if (!$("#dash-opp")) return;
   const targets = B.players.filter(r => r.owner_rid != null && r.owner_rid !== me && r.value < 4000).slice(0, 4);
-  const line = (a, right) => `<div class="asset">${posBadge(a.pos)}<div class="name">${esc(a.name)} <span class="muted small">${assetMeta(a)}</span>
+  const line = (a, right) => `<div class="asset">${posBadge(a.pos)}<div class="name">${pName(a)} <span class="muted small">${assetMeta(a)}</span>
     <div>${sigChips(a)}</div></div><span class="val small">${right}</span></div>`;
+  const rise = $("#dash-rising");
+  if (rise && W.rising.length) rise.innerHTML = `<div class="card"><div class="row spread"><h2>${hint("Rising on waivers", HELP.rising)}</h2><a class="small" href="#/pickups">All free agents →</a></div>
+    ${W.rising.map(r => { const a = r.asset;
+      return `<div class="asset">${posBadge(a.pos)}<div class="name">${pName(a)} <span class="muted small">${assetMeta(a)}</span>
+        <ul class="notes" style="margin:2px 0 0">${r.rising_why.map(w => `<li>${esc(w)}</li>`).join("")}</ul></div>
+        <span class="val small"><b>bid ~$${r.bid.mid}</b><br><span class="muted">$${r.bid.lo}–$${r.bid.hi}</span></span></div>`; }).join("")}</div>`;
   $("#dash-opp").innerHTML = `<h2>Free agents &amp; breakout targets</h2><div class="grid g2">
     <div><h3>${hint("Best adds for you", HELP.pickupScore)}</h3>
       ${W.suggestions.slice(0, 4).map(s => line(s.asset, `${hint("score", HELP.pickupScore)} ${fmt(s.score)}<br><span class="muted">bid ~$${s.bid.mid}</span>`)).join("") || '<p class="muted">Nobody beats your weakest player right now.</p>'}
@@ -367,13 +374,14 @@ async function viewTrade() {
     const chosen = new Set(tr[side].map(x => x.kind + ":" + x.id));
     const all = [...t.players, ...t.picks];
     return `<input class="filter" data-side="${side}" placeholder="Filter…" style="width:100%;margin-bottom:6px">
-      <div class="picker" data-side="${side}">${all.map(a => assetLine(a, { cls: chosen.has(a.kind + ":" + a.id) ? "sel" : "" })).join("")}</div>`;
+      <div class="picker" data-side="${side}">${all.map(a => assetLine(a, { cls: chosen.has(a.kind + ":" + a.id) ? "sel" : "", nolink: true })).join("")}</div>`;
   };
-  setTimeout(() => wireTrade(), 0);
+  setTimeout(() => { wireTrade(); loadScout(ov, tb); }, 0);
   return `<div class="grid g2">
     <div class="card"><div class="row spread"><h2>Team A gives</h2><select id="team-a">${opts(tr.a)}</select></div>${picker(ta, "aGives")}</div>
     <div class="card"><div class="row spread"><h2>Team B gives</h2><select id="team-b">${opts(tr.b)}</select></div>${picker(tb, "bGives")}</div>
   </div>
+  <div class="card" id="scout"><h2>Scouting ${esc(tb.manager)}</h2><p class="muted small">Loading…</p></div>
   <div class="row" style="margin-bottom:12px">
     <button id="clear-trade">Clear</button>
     <button id="suggest-b" class="primary" ${tr.a !== ov.me ? "disabled title='Suggestions are generated for your team as Team A'" : ""}>Suggest trades with Team B</button>
@@ -405,6 +413,54 @@ function wireTrade() {
     $("#trade-sugg").innerHTML = `<div class="card"><h2>Suggested packages</h2>${list.length ? list.map(s => suggestionCard(s, tr.b)).join("") : '<p class="muted">Nothing found.</p>'}</div>`;
   };
   runEval();
+}
+
+// Team B at a glance: what they need, how they trade, and which calculator to build the offer on.
+const CALC_NAME = { ktc: "KeepTradeCut", dynastyprocess: "DynastyProcess", fantasycalc: "FantasyCalc" };
+const WINDOW_PLAY = {
+  contend: "Contending: pays for players who help now. Sell them producing veterans; ask for picks and young players.",
+  rebuild: "Rebuilding: wants youth and picks. Sell them young players and picks; ask for their veterans.",
+  middle: "In the middle: could go either way, so lead with whatever fills a need.",
+};
+async function loadScout(ov, t) {
+  let S = null;
+  try { S = await api(`/api/scout?b=${t.roster_id}&a=${state.trade.a}`); } catch (e) { /* the card works without it */ }
+  const host = $("#scout");
+  if (!host || state.trade.b !== t.roster_id) return;
+  const rank = k => `${1 + ov.teams.filter(x => x[k] > t[k]).length}/${ov.teams.length}`;
+  const need = d => Object.entries(d || {}).filter(([, v]) => v >= 0.5).sort((x, y) => y[1] - x[1]).map(([p]) => posBadge(p)).join(" ");
+  const td = t.tendencies || {}, C = S && S.calc, G = S && S.gaps, O = S && S.odds;
+  const res = v => v == null ? "–" : `<span class="${signCls(v)}">${pct(v, 0)}</span>`;
+  const calc = C && C.lean
+    ? `<p>Trades by <b>${CALC_NAME[C.lean]}</b> <span class="badge ${C.strength >= 0.5 ? "acc-Likely" : "acc-Possible"}" ${tipAttr(HELP.calcLean)}>${C.strength >= 0.5 ? "clear" : "likely"} lean</span></p>
+       <p class="small">Over ${C.n} trades their side averaged ${res(C.avg_gain.ktc)} on KTC and ${res(C.avg_gain.dynastyprocess)} on DP. Build offers that look fair on ${CALC_NAME[C.lean]}.
+         ${C.lean === "dynastyprocess" ? "DP values stars more steeply than KTC, so they'll pay up for one stud over several pieces." : "KTC values depth closer to stars than DP, so several good pieces can buy a stud."}</p>
+       ${G && G.offer.length ? `<p class="small"><b>Offer:</b> ${SRC[C.lean]} rates these of yours above the consensus: ${G.offer.map(x => `${pName(x)} <span class="delta-pos">+${x.pct}%</span>`).join(", ")}.</p>` : ""}
+       ${G && G.ask.length ? `<p class="small"><b>Ask for:</b> it rates these of theirs below: ${G.ask.map(x => `${pName(x)} <span class="delta-neg">${x.pct}%</span>`).join(", ")}.</p>` : ""}`
+    : C && C.n ? `<p class="small">${C.n < S.min_trades ? `Only ${C.n} trade${C.n === 1 ? "" : "s"}, too few to tell.` : `No clear lean over ${C.n} trades.`}
+        Their side averaged ${res(C.avg_gain.ktc)} on KTC and ${res(C.avg_gain.dynastyprocess)} on DP.</p>`
+    : `<p class="small muted">${S && S.calc_error ? "KTC history unavailable." : "No trades to judge by yet."}</p>`;
+  host.innerHTML = `<div class="row spread"><h2>Scouting ${esc(t.manager)} ${windowBadge(t.window, t.window_source)}</h2><a class="small" href="#/team/${t.roster_id}">Full profile →</a></div>
+    <div class="muted small">${t.wins}-${t.losses}${t.ties ? "-" + t.ties : ""} · contend score ${t.contend_score} · win-now ${rank("starter_redraft")} · dynasty ${rank("dynasty_total")} · picks ${rank("pick_total")}
+      ${O ? ` · playoff odds ${Math.round(O.playoff_pct)}% · title ${Math.round(O.title_pct)}%` : ""}</div>
+    <div class="grid g3" style="margin-top:10px">
+      <div><h3>${hint("Needs", HELP.needs)}</h3>
+        <p class="small">${WINDOW_PLAY[t.window] || ""}</p>
+        <p class="small">Now: ${need(t.need_now) || '<span class="muted">nothing pressing</span>'}<br>Later: ${need(t.need_future) || '<span class="muted">nothing pressing</span>'}
+          ${t.surplus && t.surplus.length ? `<br>Deep at: ${t.surplus.map(posBadge).join(" ")} <span class="muted">(ask for one)</span>` : ""}</p></div>
+      <div><h3>${hint("How they trade", HELP.tendencies)}</h3>
+        ${td.tags && td.tags.length ? `<div>${tags(td.tags)}</div>` : ""}
+        ${(td.notes || []).length ? `<ul class="notes">${td.notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>` : '<p class="small muted">No trade history yet.</p>'}
+        ${t.manager_note ? `<p class="small"><b>Your note:</b> ${esc(t.manager_note)}</p>` : ""}</div>
+      <div><h3>${hint("Calculator", HELP.calcLean)}</h3>${calc}
+        <p class="muted small">From their past trades, valued on each calculator on the trade date. FantasyCalc keeps no history, so it can't be checked.</p></div>
+    </div>`;
+  // Mark the over- and underrated assets in the pickers too.
+  if (G) for (const [side, xs, cls] of [["aGives", G.offer, "delta-pos"], ["bGives", G.ask, "delta-neg"]])
+    for (const x of xs) {
+      const el = $(`.picker[data-side="${side}"] .asset[data-kind="${x.kind}"][data-id="${CSS.escape(x.id)}"] .name`);
+      if (el) el.insertAdjacentHTML("beforeend", ` <span class="small ${cls}" ${tipAttr(`${CALC_NAME[G.source]}, which ${t.manager} seems to trade by, rates ${x.kind === "pick" ? "this pick" : "him"} ${x.pct > 0 ? "+" : ""}${x.pct}% vs. the consensus.`)}>${SRC[G.source]} ${x.pct > 0 ? "+" : ""}${x.pct}%</span>`);
+    }
 }
 
 async function runEval() {
@@ -544,7 +600,7 @@ function tradeBlock(tx) {
     <div class="row spread small"><b>${esc(tx.date)}</b><span class="muted">${tx.season} wk ${tx.week ?? "?"}${tx.winner ? ` · edge today: <b>${esc(tx.winner)}</b>` : ""}</span></div>
     <div class="sides" style="grid-template-columns:repeat(${tx.sides.length},1fr)">
       ${tx.sides.map(s => `<div><div class="side-h">${esc(s.manager)} gets · ${fmt(s.recv_value)}</div>
-        ${s.received.map(a => `<div class="asset">${posBadge(a.pos)}<div class="name">${esc(a.name)}${a.age ? ` <span class="muted small">${a.age.toFixed(1)}y then</span>` : ""}</div><span class="val">${fmt(a.value)}</span></div>`).join("") || '<span class="muted">–</span>'}
+        ${s.received.map(a => `<div class="asset">${posBadge(a.pos)}<div class="name">${pName(a)}${a.age ? ` <span class="muted small">${a.age.toFixed(1)}y then</span>` : ""}</div><span class="val">${fmt(a.value)}</span></div>`).join("") || '<span class="muted">–</span>'}
         ${s.faab ? `<div class="small muted">+ $${s.faab} FAAB</div>` : ""}</div>`).join("")}
     </div></div>`;
 }
@@ -630,7 +686,7 @@ function reviewCard(t, me) {
     </div>
     <div class="tsides" style="grid-template-columns:repeat(${t.sides.length},minmax(0,1fr))">
       ${t.sides.map(s => `<div><div class="side-h">${esc(s.manager)} ${resBadge(s.result)} <span class="muted small">gets</span></div>
-        <table data-nosort class="small"><tbody>${s.received.map(a => `<tr><td>${posBadge(a.pos)}</td><td>${esc(a.name)}</td>
+        <table data-nosort class="small"><tbody>${s.received.map(a => `<tr><td>${posBadge(a.pos)}</td><td>${pName(a)}</td>
           <td class="num muted">${fmt(a.then)} →</td><td class="num"><b>${fmt(a.now)}</b></td><td class="num muted">${a.points ? a.points.toFixed(0) + " pts" : ""}</td></tr>`).join("")
           || '<tr><td class="muted">Nothing</td></tr>'}</tbody></table>
         ${s.faab ? `<div class="small muted">+ $${s.faab} FAAB</div>` : ""}
@@ -904,7 +960,7 @@ async function viewDrafts() {
   setTimeout(() => drawDraftsCharts(D), 0);
   const rows = [...teams].sort((a, b) => b.drafts[key].change_pct - a.drafts[key].change_pct);
   const pickHead = `<thead><tr><th></th><th>Player</th><th>Drafted by</th><th class="num">Draft day</th><th class="num">Now</th><th class="num">Change</th><th>Trend</th></tr></thead>`;
-  const pickLine = p => `<tr><td>${posBadge(p.pos)}</td><td><b>${esc(p.name)}</b><div class="muted small">${esc(p.draft)} · ${pickLabel(p, D.teams.length)} (#${p.pick_no})</div></td>
+  const pickLine = p => `<tr><td>${posBadge(p.pos)}</td><td><b>${pName(p)}</b><div class="muted small">${esc(p.draft)} · ${pickLabel(p, D.teams.length)} (#${p.pick_no})</div></td>
     <td><a href="#/drafts/${p.roster_id}">${esc(p.manager)}</a></td><td class="num">${fmt(p.draft_value)}</td><td class="num">${fmt(p.now_value)}</td>
     <td class="num ${signCls(p.change)}">${p.change > 0 ? "+" : ""}${fmt(p.change)}</td><td>${sparkline(p.history)}</td></tr>`;
   return `<div class="card"><h1>Past drafts</h1>
@@ -940,8 +996,8 @@ async function viewDrafts() {
         <td><b>${esc(t.manager)}</b></td><td class="num">${d.n}</td><td class="num">${fmt(d.draft_value)}</td><td class="num">${fmt(d.now_value)}</td>
         <td class="num">${pctTxt(d.change_pct)}</td><td class="num">${d.retained_pct}% <span class="muted small">(${d.retained}/${d.n})</span></td>
         <td class="num">${Math.round(d.in_league / d.n * 100)}%</td><td class="num">${fmt(d.retained_value)}</td>
-        <td>${posBadge(d.best.pos)} ${esc(d.best.name)} <span class="delta-pos small">+${fmt(d.best.change)}</span></td>
-        <td>${posBadge(d.worst.pos)} ${esc(d.worst.name)} <span class="delta-neg small">${fmt(d.worst.change)}</span></td></tr>`; }).join("")}</tbody>
+        <td>${posBadge(d.best.pos)} ${pName(d.best)} <span class="delta-pos small">+${fmt(d.best.change)}</span></td>
+        <td>${posBadge(d.worst.pos)} ${pName(d.worst)} <span class="delta-neg small">${fmt(d.worst.change)}</span></td></tr>`; }).join("")}</tbody>
   </table></div>
   <p class="muted small">Still on roster = drafted players the drafting team still owns. Still in league = rostered by anyone.</p></div>
   <div class="grid g2">
@@ -1031,7 +1087,7 @@ async function viewDraftTeam(rid) {
     <thead><tr><th>Pick</th><th></th><th>Player</th><th>Drafted</th><th class="num">Draft-day value</th><th class="num">Now</th><th class="num">Change</th><th>Value over time</th><th>Status</th></tr></thead>
     <tbody>${picks.map(p => `<tr>
       <td class="num">${pickLabel(p, D.teams.length)}<div class="muted small">#${p.pick_no}${key === "all" ? " · " + (p.kind === "startup" ? "SU" : p.draft.slice(0, 4)) : ""}</div></td>
-      <td>${posBadge(p.pos)}</td><td><b>${esc(p.name)}</b></td><td class="small">${p.date}</td>
+      <td>${posBadge(p.pos)}</td><td><b>${pName(p)}</b></td><td class="small">${p.date}</td>
       <td class="num">${fmt(p.draft_value)}</td><td class="num">${fmt(p.now_value)}</td>
       <td class="num ${signCls(p.change)}">${p.change > 0 ? "+" : ""}${fmt(p.change)}</td>
       <td>${sparkline(p.history)}</td>
@@ -1043,7 +1099,7 @@ async function viewDraftTeam(rid) {
     <div id="dr-cons"></div>
     <div class="grid g2" style="margin-top:10px">${SRC_KEYS.map(k => { const ps = cons.players.filter(p => p.source === k);
       return `<div><h3>${SRC_LABELS[k]} · ${ps.length} players · ${cons.value_pct[k]}% of value</h3>${ps.map(p =>
-        `<div class="asset">${posBadge(p.pos)}<div class="name">${esc(p.name)} <span class="muted small">${p.date || ""}</span></div><span class="val">${fmt(p.value)}</span></div>`).join("") || '<p class="muted small">None</p>'}</div>`; }).join("")}</div>
+        `<div class="asset">${posBadge(p.pos)}<div class="name">${pName(p)} <span class="muted small">${p.date || ""}</span></div><span class="val">${fmt(p.value)}</span></div>`).join("") || '<p class="muted small">None</p>'}</div>`; }).join("")}</div>
   </div>`;
 }
 
@@ -1086,11 +1142,11 @@ async function viewWaivers() {
   const ps = W.pickups.filter(p => key === "all" || String(p.season) === key);
   const rows = [...W.teams].sort((a, b) => b.stats[key].captured - a.stats[key].captured);
   const pkHead = (metric) => `<thead><tr><th></th><th>Player</th><th>Picked up by</th><th class="num">${hint("At pickup", HELP.atPickup)}</th><th class="num">${metric}</th><th>Trend</th></tr></thead>`;
-  const pkRow = (p, field) => `<tr><td>${posBadge(p.pos)}</td><td><b>${esc(p.name)}</b><div class="muted small">${p.date} · ${howCell(p)} · ${esc(p.outcome)}</div></td>
+  const pkRow = (p, field) => `<tr><td>${posBadge(p.pos)}</td><td><b>${pName(p)}</b><div class="muted small">${p.date} · ${howCell(p)} · ${esc(p.outcome)}</div></td>
     <td><a href="#/waivers/${p.roster_id}">${esc(p.manager)}</a></td><td class="num">${fmt(p.value_at_pickup)}</td>
     <td class="num"><b>${field === "start_points" ? p.start_points.toFixed(1) : fmt(p[field])}</b>${field === "start_points" ? `<div class="muted small">${p.starts} starts</div>` : ""}</td><td>${sparkline(p.history)}</td></tr>`;
   setTimeout(() => drawWaivers(W), 0);
-  const best = b => b ? `${posBadge(b.pos)} ${esc(b.name)}` : '<span class="muted">–</span>';
+  const best = b => b ? `${posBadge(b.pos)} ${pName(b)}` : '<span class="muted">–</span>';
   return `<div class="card"><h1>Pickup history</h1>
     <p class="muted">Every player added from waivers or free agency, held until that team dropped or traded him. Two ways to judge a pickup:
       <b>${hint("value captured", HELP.captured)}</b> (what he's worth to the team today, in dynasty value) and
@@ -1187,7 +1243,7 @@ async function viewWaiverTeam(rid) {
   <div class="card"><h2>All pickups</h2><div class="scroll"><table>
     <thead><tr><th>Date</th><th></th><th>Player</th><th>How</th><th class="num">${hint("At pickup", HELP.atPickup)}</th><th class="num">${hint("Peak held", HELP.peak)}</th>
       <th class="num">Now</th><th class="num">${hint("Captured", HELP.captured)}</th><th class="num">${hint("Start pts", HELP.startPts)}</th><th>Value since pickup</th><th>Outcome</th></tr></thead>
-    <tbody>${ps.map(p => `<tr><td class="small">${p.date}<div class="muted">${p.week == null ? `${p.season} offseason` : `${p.season} wk ${p.week}`}</div></td><td>${posBadge(p.pos)}</td><td><b>${esc(p.name)}</b></td>
+    <tbody>${ps.map(p => `<tr><td class="small">${p.date}<div class="muted">${p.week == null ? `${p.season} offseason` : `${p.season} wk ${p.week}`}</div></td><td>${posBadge(p.pos)}</td><td><b>${pName(p)}</b></td>
       <td class="small">${howCell(p)}</td><td class="num">${fmt(p.value_at_pickup)}</td><td class="num">${fmt(p.peak)}</td><td class="num">${fmt(p.now_value)}</td>
       <td class="num"><b>${fmt(p.captured)}</b></td><td class="num">${p.start_points.toFixed(1)}<div class="muted small">${p.starts} starts</div></td>
       <td>${sparkline(p.history)}</td><td class="small">${outcomeCell(p)}</td></tr>`).join("") || '<tr><td colspan="11" class="muted">No pickups.</td></tr>'}</tbody>
@@ -1295,7 +1351,7 @@ async function viewRankings() {
       <td class="num">${fmt(t.franchise_value)}</td><td class="num">${fmt(t.core)}</td><td class="num">${fmt(t.depth)}</td><td class="num">${fmt(t.pick_value)}</td>
       ${R.pick_seasons.map(s => `<td class="num">${fmt(t.pick_seasons[s])}</td>`).join("")}
       <td class="num">${fmt(t.win_now)}</td><td class="num">${t.age}</td>
-      <td class="small">${t.top_players.map(p => `${posBadge(p.pos)} ${esc(p.name)}`).join("<br>")}</td></tr>`).join("")}</tbody>
+      <td class="small">${t.top_players.map(p => `${posBadge(p.pos)} ${pName(p)}`).join("<br>")}</td></tr>`).join("")}</tbody>
   </table></div></div>
   <div class="grid g2">
     <div class="card"><h2>${hint("League map", HELP.leagueMap)}</h2>
@@ -1405,6 +1461,7 @@ Object.assign(HELP, {
   eff: "Fantasy points per opportunity vs. the median regular at his position, pooling this season and half of last season. 1.00× = median.",
   depthChart: "His place on his NFL team's depth chart, ranked by opportunities per game (recent games weighted up), with Sleeper's depth chart as the tiebreaker.",
   contract: "Final season of his current contract (OverTheCap via nflverse) and its average annual value. Hover for whether he's likely to be back.",
+  rising: "Free agents whose value is rising or about to: projected starters the market still prices as backups, a FantasyCalc value up 25%+ over 30 days, or a growing role (breakout score 40+). Best pickup score for your team first.",
   bid: "Suggested FAAB bid: the median winning bid on the 8 most similar-value claims in this league over the last two seasons, with the middle half of those bids as the range. Projected starting QBs (marked QB) are bid from past claims on QBs projected to start instead, since superflex managers pay for those whatever their value.",
   gain: "Pickup score of the player minus the pickup score of the player you'd drop.",
   drops: "Your lowest pickup scores among active (non-taxi, non-IR) players: the cheapest roster spots to open.",
@@ -1424,7 +1481,7 @@ function roleCells(a) {
 function depthCell(a) {
   const d = (a.opp || {}).depth;
   if (!d || !d.label) return `<td class="muted">–</td>`;
-  const ahead = d.ahead.map(q => `${esc(q.name)}${q.injury ? ` <span class="delta-neg">${esc(q.injury)}</span>` : ""}`).join(", ");
+  const ahead = d.ahead.map(q => `${pName(q)}${q.injury ? ` <span class="delta-neg">${esc(q.injury)}</span>` : ""}`).join(", ");
   return `<td data-sort="${d.rank}">${esc(a.nfl_team)} ${esc(d.label)}${ahead ? `<div class="muted small">behind ${ahead}</div>` : ""}</td>`;
 }
 function contractCell(a, season) {
@@ -1551,7 +1608,7 @@ async function viewBreakouts() {
   const rows = B.players.filter(r => (bo.avail === "all" || availOf(r, me) === bo.avail) && (!bo.pos || r.pos === bo.pos));
   const faMovers = rows.filter(r => (r.opp?.signals?.fa_move || 0) > 0).slice(0, 25);
   setTimeout(() => { drawBreakouts(B, rows); loadBacktest(); }, 0);
-  const nextTxt = n => `<b>${esc(n.name)}</b> <span class="small muted">${esc(n.depth || "")}${n.age ? ` · ${n.age}y` : ""} · ${fmt(n.value)} · breakout ${n.breakout} · ${n.owner_rid == null ? "free agent" : n.owner_rid === me ? "<b>yours</b>" : esc(n.owner)}</span>`;
+  const nextTxt = n => `<b>${pName(n)}</b> <span class="small muted">${esc(n.depth || "")}${n.age ? ` · ${n.age}y` : ""} · ${fmt(n.value)} · breakout ${n.breakout} · ${n.owner_rid == null ? "free agent" : n.owner_rid === me ? "<b>yours</b>" : esc(n.owner)}</span>`;
   return `${B.error ? `<div class="warnbox">Usage/contract data failed to load (${esc(B.error)}).</div>` : ""}
   <div class="card"><h1>Breakout watch</h1>
     <p class="muted">Players whose role is likely to grow before the market prices it in: ${Object.keys(SIGNAL_LABEL).filter(k => k !== "injured").map(k => `<span class="badge tag" ${tipAttr(SIGNAL_HELP[k])}>${SIGNAL_LABEL[k]}</span>`).join(" ")}.
@@ -1584,7 +1641,7 @@ async function viewBreakouts() {
     <div class="scroll"><table><thead><tr><th>NFL team</th><th>Starter</th><th>Why he may not be there</th><th class="num">Leave risk</th><th>Next in line</th></tr></thead>
       <tbody>${B.shakeups.filter(s => !bo.pos || s.pos === bo.pos).slice(0, 40).map(s => `<tr>
         <td><b>${esc(s.team)}</b> ${posBadge(s.pos)}</td>
-        <td><b>${esc(s.starter.name)}</b><div class="muted small">${s.starter.age ?? "?"}y · ${fmt(s.starter.value)}${s.starter.owner ? ` · ${esc(s.starter.owner)}` : ""}</div></td>
+        <td><b>${pName(s.starter)}</b><div class="muted small">${s.starter.age ?? "?"}y · ${fmt(s.starter.value)}${s.starter.owner ? ` · ${esc(s.starter.owner)}` : ""}</div></td>
         <td class="small">${s.out_now ? `<span class="delta-neg">${esc(s.starter.injury)} now.</span> ` : ""}${esc(s.starter.leave_why || "")}</td>
         <td class="num" data-sort="${s.starter.leave_p ?? 0}">${s.starter.leave_p != null ? Math.round(s.starter.leave_p * 100) + "%" : "–"}</td>
         <td class="small">${s.next.map(nextTxt).join("<br>")}</td></tr>`).join("") || '<tr><td colspan="5" class="muted">None.</td></tr>'}</tbody>
@@ -1611,7 +1668,7 @@ async function loadBacktest() {
     ${S ? `<div class="tile"><div class="k">Isaiah Likely, end of ${S.as_of}</div><div class="v">#${S.rank}</div>
       <div class="d muted">of ${S.n} · score ${S.breakout}${S.notes.length ? ` · ${S.notes.map(n => SIGNAL_LABEL[n.key]).join(", ").toLowerCase()}` : ""} · ${fmt(S.then)} → ${fmt(S.now)}</div></div>` : ""}
   </div>`;
-  const btRow = r => `<tr><td class="num">${r.rank}</td><td>${posBadge(r.pos)}</td><td><b>${esc(r.name)}</b><div class="muted small">${esc(r.team)}${r.now_team && r.now_team !== r.team ? ` → ${esc(r.now_team)}` : ""}</div></td>
+  const btRow = r => `<tr><td class="num">${r.rank}</td><td>${posBadge(r.pos)}</td><td><b>${pName(r)}</b><div class="muted small">${esc(r.team)}${r.now_team && r.now_team !== r.team ? ` → ${esc(r.now_team)}` : ""}</div></td>
     <td class="num">${r.breakout}</td><td class="num">${fmt(r.then)}</td><td class="num">${fmt(r.now)}</td><td class="num ${signCls(r.change)}">${r.change > 0 ? "+" : ""}${fmt(r.change)}</td>
     <td>${(r.notes || []).map(n => `<span class="badge tag" ${tipAttr(n.text + ".")}>${SIGNAL_LABEL[n.key]}</span>`).join(" ")}</td></tr>`;
   const btHead = `<thead><tr><th class="num">Rank</th><th></th><th>Player</th><th class="num">Score then</th><th class="num">Value then</th><th class="num">Later</th><th class="num">Change</th><th>Signals then</th></tr></thead>`;
@@ -1669,7 +1726,7 @@ function recordCard(title, help, rows, row, me, expand) {
 function tradeAssetsHTML(x) {
   const asset = a => {
     const p = a.pick;
-    const label = p ? `${esc(p.label)}${p.orig ? ` <span class="muted">(${esc(p.orig)}'s)</span>` : ""}${p.became ? `<div class="became">→ ${posBadge(p.became_pos)} ${esc(p.became)}</div>` : '<div class="became muted">not used yet</div>'}` : esc(a.name);
+    const label = p ? `${esc(p.label)}${p.orig ? ` <span class="muted">(${esc(p.orig)}'s)</span>` : ""}${p.became ? `<div class="became">→ ${posBadge(p.became_pos)} ${pName({ id: p.became_id, pos: p.became_pos }, p.became)}</div>` : '<div class="became muted">not used yet</div>'}` : pName(a);
     return `<tr><td>${posBadge(p ? "PICK" : a.pos)}</td><td>${label}</td><td class="num muted">${fmt(a.then)} →</td><td class="num"><b>${fmt(a.now)}</b></td></tr>`;
   };
   return `<div class="rec-trade">${x.sides.map(s => `<div><div class="side-h">${esc(s.manager)} got</div>
@@ -1694,9 +1751,9 @@ async function viewRecords() {
   const tradeRow = x => [`<b>${esc(x.winner)}</b> over ${esc(x.loser || "")}`, `+${fmt(x.gap)}`,
     `${esc(x.date)} · ${x.pct.toFixed(0)}% of the deal`];
   const classRow = x => [`<b>${esc(x.manager)}</b>${early(x)}`, `${x.change_pct > 0 ? "+" : ""}${x.change_pct.toFixed(1)}%`,
-    `${esc(x.draft)} · ${x.n} picks · ${fmt(x.draft_value)} → ${fmt(x.now_value)}${x.best ? ` · best: ${esc(x.best.name)}` : ""}`];
-  const pickRow = x => [`${posBadge(x.pos)} <b>${esc(x.name)}</b>`, signed(x.change), `${esc(x.manager)} · ${esc(x.draft)} ${esc(x.pick)} · ${fmt(x.draft_value)} → ${fmt(x.now_value)}`];
-  const wvRow = (x, v) => [`${posBadge(x.pos)} <b>${esc(x.name)}</b>`, v, `${esc(x.manager)} · ${esc(x.date)} · ${x.type === "claim" ? `claim $${x.bid}` : "free agent"} · ${esc(x.outcome)}`];
+    `${esc(x.draft)} · ${x.n} picks · ${fmt(x.draft_value)} → ${fmt(x.now_value)}${x.best ? ` · best: ${pName(x.best)}` : ""}`];
+  const pickRow = x => [`${posBadge(x.pos)} <b>${pName(x)}</b>`, signed(x.change), `${esc(x.manager)} · ${esc(x.draft)} ${esc(x.pick)} · ${fmt(x.draft_value)} → ${fmt(x.now_value)}`];
+  const wvRow = (x, v) => [`${posBadge(x.pos)} <b>${pName(x)}</b>`, v, `${esc(x.manager)} · ${esc(x.date)} · ${x.type === "claim" ? `claim $${x.bid}` : "free agent"} · ${esc(x.outcome)}`];
   const section = (title, cards) => { const body = cards.join(""); return body ? `<h2 class="sec">${title}</h2><div class="grid g3">${body}</div>` : ""; };
   return `<div class="card"><h1>Record book</h1>
     <p class="muted">All-time records across ${R.seasons.length} season${R.seasons.length === 1 ? "" : "s"} (${[...R.seasons].sort().join(", ")}) and ${fmt(R.n_games)} games.
@@ -1724,8 +1781,8 @@ async function viewRecords() {
     recordCard("Best regular-season record", "", S.record, x => [`<b>${esc(x.manager)}</b>`, `${x.w}–${x.l}${x.t ? "–" + x.t : ""}`, `${x.season} · ${fmt(x.pf)} points`], me),
   ])}
   ${section("Players", [
-    recordCard("Best single game", "Fantasy points by one player in a starting lineup.", P.games, x => [`${posBadge(x.pos)} <b>${esc(x.name)}</b>`, pts2(x.points), `${esc(x.manager)} · ${x.season} wk ${x.week}`], me),
-    recordCard("Franchise player", HELP.franchisePlayer, P.franchise, x => [`${posBadge(x.pos)} <b>${esc(x.name)}</b>`, fmt(x.points), `for ${esc(x.manager)} · ${x.starts} starts`], me),
+    recordCard("Best single game", "Fantasy points by one player in a starting lineup.", P.games, x => [`${posBadge(x.pos)} <b>${pName(x)}</b>`, pts2(x.points), `${esc(x.manager)} · ${x.season} wk ${x.week}`], me),
+    recordCard("Franchise player", HELP.franchisePlayer, P.franchise, x => [`${posBadge(x.pos)} <b>${pName(x)}</b>`, fmt(x.points), `for ${esc(x.manager)} · ${x.starts} starts`], me),
   ])}
   ${section("Trades", [
     recordCard("Biggest fleece (today)", HELP.today, T.now, tradeRow, me, tradeAssetsHTML),
@@ -1879,14 +1936,15 @@ async function viewDraftPrep() {
         <td class="num">${p.exp_slot.toFixed(1)}</td></tr>`).join("")}</tbody></table></div></div>` : ""}
   ${D.board.length ? `<div class="grid g2">
     <div class="card"><h2>Big board</h2><div class="scroll"><table><thead><tr><th class="num">#</th><th></th><th>Player</th><th class="num">Value</th><th class="num">NFL pick</th><th class="num">${hint("Hit / bust", HELP.capitalOdds)}</th></tr></thead>
-      <tbody>${D.board.map((b, i) => `<tr><td class="num">${i + 1}</td><td>${posBadge(b.pos)}</td><td><b>${esc(b.name)}</b> <span class="muted small">${esc(b.nfl_team || "")}</span></td><td class="num">${fmt(b.value)}</td>
+      <tbody>${D.board.map((b, i) => `<tr><td class="num">${i + 1}</td><td>${posBadge(b.pos)}</td><td><b>${pName(b)}</b> <span class="muted small">${esc(b.nfl_team || "")}</span></td><td class="num">${fmt(b.value)}</td>
         <td class="num">${b.nfl_pick || '<span class="muted small">UDFA</span>'}</td><td class="num">${b.hit != null ? `${Math.round(b.hit)}% <span class="muted small">/ ${Math.round(b.bust)}%</span>` : "–"}</td></tr>`).join("")}</tbody></table></div></div>
     <div class="card"><h2>Mock drafts: who's there at your picks</h2>
       ${D.mock.map(m => `<h3>${esc(m.label)}</h3><table><thead><tr><th></th><th>Player</th><th class="num">${hint("Available", HELP.mockAvail)}</th><th class="num">${hint("You take him", HELP.mockTaken)}</th></tr></thead>
-        <tbody>${m.candidates.map(c => `<tr><td>${posBadge(c.pos)}</td><td>${esc(c.name)}</td><td class="num">${Math.round(c.available * 100)}%</td><td class="num">${Math.round(c.taken * 100)}%</td></tr>`).join("")}</tbody></table>`).join("")}
+        <tbody>${m.candidates.map(c => `<tr><td>${posBadge(c.pos)}</td><td>${pName(c)}</td><td class="num">${Math.round(c.available * 100)}%</td><td class="num">${Math.round(c.taken * 100)}%</td></tr>`).join("")}</tbody></table>`).join("")}
     </div></div>` : `<div class="card"><h2>Big board and mock drafts</h2>
     <p class="muted">The ${D.season} rookie class isn't in the value sources yet. Players get dynasty values after the NFL draft in late April.
       Once they do, this page shows a big board and mock drafts: who's likely to be on the board at each of your picks, simulated with every manager's draft habits and needs (below).</p></div>`}
+  <div class="card" id="dp-classes"><h2>Future rookie classes</h2><p class="muted small">Loading…</p></div>
   <div class="card"><h2>How each manager drafts</h2><div class="scroll"><table>
     <thead><tr><th>Manager</th><th class="num">Picks</th><th class="num">QB</th><th class="num">RB</th><th class="num">WR</th><th class="num">TE</th><th>${hint("Leans", HELP.posLean)}</th>
       <th class="num">${hint("Best available", HELP.bpaRate)}</th><th class="num">${hint("Avg rank taken", HELP.avgRank)}</th><th>Needs now</th></tr></thead>
@@ -1904,6 +1962,49 @@ function drawDraftPrep(D) {
   draw();
   onResize(draw);
   loadPickTiming([draw]);
+  loadClasses();
+}
+
+// "Future rookie classes" on the Upcoming draft page: what each class is heavy in, and what your picks in it are likely to land.
+Object.assign(HELP, {
+  classMix: "The class's top players by KeepTradeCut devy value are its projected rookie-draft rounds. Compared with past classes (2019 on, valued the July after their NFL draft). Heavy or light: the position's share of the top-two-rounds value is 5+ points above or below a typical class. Shares are used because KTC prices classes that are further away lower.",
+  classOdds: "Mock drafts of the class: each manager takes the best value adjusted for their long-term needs and draft habits, with some randomness. Next year's draft order comes from the season simulation; later ones from projected lineup strength the season before.",
+});
+async function loadClasses() {
+  const host = $("#dp-classes");
+  if (!host) return;
+  let C;
+  try { C = await cachedApi("classes", "/api/rookie-classes"); }
+  catch (e) { host.innerHTML = `<h2>Future rookie classes</h2><div class="warnbox">${esc(e.message)}</div>`; return; }
+  if (!$("#dp-classes")) return;
+  if (C.error || !C.classes.length) { host.innerHTML = `<h2>Future rookie classes</h2><p class="muted">${C.error ? `KeepTradeCut's devy rankings didn't load (${esc(C.error)}).` : "No upcoming classes in KeepTradeCut's devy rankings."}</p>`; return; }
+  const pos = state.clsPos ||= (C.superflex ? "QB" : C.my_needs[0] || "RB");
+  const T = C.typical, n = C.teams;
+  const vs = (v, t) => t == null ? `${v}` : `${v} <span class="muted small">(${t})</span>`;
+  const firsts = C.classes.flatMap(c => c.my_picks.map(p => ({ ...p, year: c.year, x: p.pos[pos] })));
+  const likely = x => x.players.find(b => b.avail >= 50);
+  const best = [...firsts].sort((a, b) => b.x.r1_any - a.x.r1_any || ((likely(a.x) || {}).rank ?? 99) - ((likely(b.x) || {}).rank ?? 99))[0];
+  const slot = (p) => p.slot_range ? (p.slot_range[0] === p.slot_range[1] ? `${p.round}.${String(p.slot_range[0]).padStart(2, "0")}` : `${p.round}.${String(p.slot_range[0]).padStart(2, "0")}–${p.round}.${String(p.slot_range[1]).padStart(2, "0")}`) : "";
+  host.innerHTML = `<div class="row spread"><h2>Future rookie classes</h2>
+      <div class="row">${["QB", "RB", "WR", "TE"].map(k => `<button class="small ${k === pos ? "primary" : ""}" data-clspos="${k}">${k}</button>`).join(" ")}</div></div>
+    <p class="muted small">What the next ${C.classes.length} classes are heavy in, from KeepTradeCut's devy rankings, and what your picks in them are likely to land at ${posBadge(pos)}.
+      College prospects' values move a lot in a season and none has an NFL team yet, so the later class is an early read.</p>
+    ${best && best.x.r1_any ? `<p><b>Best shot at a first-round ${pos}:</b> your ${esc(best.name)} at ${slot(best)}: ${best.x.r1_any}% that at least one of the class's ${best.x.n_r1} first-round ${pos}s is there${likely(best.x) ? `, likely ${esc(likely(best.x).name)} (#${likely(best.x).rank} in the class)` : ""}.</p>`
+      : `<p class="muted">None of your picks in these classes is likely to land a first-round ${pos}.</p>`}
+    <div class="grid g2">${C.classes.map(c => `<div>
+      <h3>${c.year} class <span class="muted small">${c.n} prospects</span> ${c.heavy.map(k => `<span class="badge acc-Likely">${k}-heavy</span>`).join(" ")} ${c.light.map(k => `<span class="badge acc-Unlikely">light at ${k}</span>`).join(" ")}</h3>
+      <table data-nosort><thead><tr><th></th><th class="num">${hint("1st round", HELP.classMix)}</th><th class="num">Rounds 1–2</th><th class="num">${hint("Value share", HELP.classMix)}</th></tr></thead>
+        <tbody>${["QB", "RB", "WR", "TE"].map(k => `<tr class="${k === pos ? "me" : ""}"><td>${posBadge(k)}</td><td class="num">${vs(c.mix[k].r1, T && T.r1[k])}</td><td class="num">${vs(c.mix[k].r12, T && T.r12[k])}</td>
+          <td class="num">${vs(Math.round(c.mix[k].share) + "%", T && Math.round(T.share[k]) + "%")}</td></tr>`).join("")}</tbody></table>
+      <p class="muted small">${T ? `In parentheses: a typical class (${T.classes} past classes). ` : ""}Top ${n} by value = projected 1st round.</p>
+      <div class="small"><b>Top ${pos}s:</b> ${c.top[pos].map(b => `${esc(b.name)} <span class="muted">${esc(b.college || "")} · #${b.rank}</span>`).join(", ") || '<span class="muted">none ranked</span>'}</div>
+      <h3 style="margin-top:10px">${hint(`Your picks: ${pos}s likely there`, HELP.classOdds)}</h3>
+      ${c.my_picks.length ? `<table data-nosort><tbody>${c.my_picks.map(p => { const x = p.pos[pos]; return `<tr><td><b>${esc(p.name)}</b><div class="muted small">${slot(p)} · draft order from ${esc(c.order_source)}</div></td>
+        <td class="small">${x.n_r1 ? `<b>${x.r1_any}%</b> a first-round ${pos} is there` : `no first-round ${pos}s projected`}
+          <div class="muted">${x.players.filter(b => b.avail >= 5).slice(0, 4).map(b => `${esc(b.name)} ${b.avail}%`).join(" · ") || "the top prospects will be gone"}</div></td></tr>`; }).join("")}</tbody></table>`
+        : '<p class="muted small">You have no 1st or 2nd in this class.</p>'}
+    </div>`).join("")}</div>`;
+  $$("[data-clspos]").forEach(b => b.onclick = () => { state.clsPos = b.dataset.clspos; loadClasses(); });
 }
 
 // ---------------------------------------------------------------- player page
@@ -1919,6 +2020,12 @@ Object.assign(HELP, {
 });
 const verdictBadge = o => o ? `<span class="badge ${VERDICT[o.verdict][1]}" ${tipAttr(HELP.ageOutlook)}>${VERDICT[o.verdict][0]}</span>` : "";
 const playerLink = (id, name) => `<a href="#/player/${esc(id)}">${esc(name)}</a>`;
+// A name linked to the player's page when the row carries a Sleeper player id; picks, kickers
+// and defenses stay plain text.
+const pName = (x, name = x.name) => {
+  const id = String(x.player_id || x.pid || x.sleeper_id || (x.kind !== "pick" ? x.id || "" : ""));
+  return /^\d+$/.test(id) && !["K", "DEF", "PICK"].includes(x.pos) ? playerLink(id, name) : esc(name);
+};
 
 async function viewPlayer(pid) {
   const P = await api(`/api/player/${encodeURIComponent(pid)}`);
@@ -1935,6 +2042,7 @@ async function viewPlayer(pid) {
       </div></div>
     ${a.notes && a.notes.length ? `<ul class="notes">${a.notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}
   </div>
+  <div class="card" id="pl-stats"><h2>Season stats</h2><p class="muted">Loading…</p></div>
   <div class="grid g2">
     <div class="card"><h2>Value history</h2><div id="pl-line"></div>
       <p class="muted small">Weekly DynastyProcess values on the app's scale, so they can differ a little from the blended value above.</p></div>
@@ -1963,6 +2071,41 @@ function drawPlayer(P) {
   const drawCurve = () => divergingColumns($("#pl-curve"), { items, xLabel: "Age", title: `Typical ${P.player.pos} value change by age` });
   drawLine(); drawCurve();
   onResize(drawLine, drawCurve);
+  loadPlayerStats(P.player.id);
+}
+Object.assign(HELP, {
+  posRank: "Rank at his position in fantasy points, scored with your league's settings. Per game only counts players who played at least half the weeks.",
+  weekRank: "His finish at his position that week, in your league's scoring. Top 12 is a starter-level week in a 12-team league.",
+});
+const GAME_STATUS = { bye: "Bye", out: "Didn't play", no_team: "No team" };
+async function loadPlayerStats(pid) {
+  let S;
+  try { S = await api(`/api/player/${encodeURIComponent(pid)}/stats`); }
+  catch (e) { const h = $("#pl-stats"); if (h) h.innerHTML = `<h2>Season stats</h2><div class="warnbox">${esc(e.message)}</div>`; return; }
+  const host = $("#pl-stats");
+  if (!host) return;
+  if (!S.games) { host.innerHTML = `<h2>${S.season} season</h2><p class="muted">No weekly stats for this player.</p>`; return; }
+  const rk = n => n ? `${S.pos}${n}` : "–";
+  const opp = g => g.opp ? `vs ${esc(g.opp)}` : "";
+  const per = S.per_game, perTxt = [per.pass_att && `${per.pass_att} att, ${per.pass_yd || 0} pass yds`, per.rush_att && `${per.rush_att} car, ${per.rush_yd || 0} rush yds`,
+    per.rec_tgt && `${per.rec_tgt} tgt, ${per.rec || 0} rec, ${per.rec_yd || 0} rec yds`].filter(Boolean).join(" · ");
+  host.innerHTML = `<h2>${S.season} season <span class="muted small">through week ${S.weeks}</span></h2>
+    <div class="tiles">
+      <div class="tile"><div class="k">${hint("Fantasy points", HELP.posRank)}</div><div class="v">${S.pts.toFixed(1)}</div><div class="d muted">${rk(S.pts_rank)} · ${S.gp} game${S.gp === 1 ? "" : "s"}</div></div>
+      <div class="tile"><div class="k">Per game</div><div class="v">${S.ppg != null ? S.ppg.toFixed(1) : "–"}</div><div class="d muted">${S.ppg_rank ? rk(S.ppg_rank) : `needs ${S.min_games}+ games to rank`}</div></div>
+      <div class="tile"><div class="k">${hint("Top-12 weeks", HELP.weekRank)}</div><div class="v">${S.top12}</div><div class="d muted">top 24: ${S.top24} of ${S.gp}</div></div>
+      ${S.snap_pct != null ? `<div class="tile"><div class="k">Snap share</div><div class="v">${S.snap_pct}%</div><div class="d muted">of team offensive snaps</div></div>` : ""}
+      ${S.n_proj ? `<div class="tile"><div class="k">Beat projection</div><div class="v">${S.beat_proj} of ${S.n_proj}</div><div class="d muted">Sleeper's weekly projection</div></div>` : ""}
+    </div>
+    ${S.line ? `<p class="small" style="margin-top:10px"><b>Season:</b> ${esc(S.line)}${perTxt ? `<br><b>Per game:</b> ${perTxt}` : ""}</p>` : ""}
+    <h3>Game log</h3>
+    <div class="scroll"><table data-nosort><thead><tr><th class="num">Wk</th><th>Opp</th><th class="num">Pts</th><th class="num">Proj</th><th class="num">${hint("Finish", HELP.weekRank)}</th><th class="num">Snaps</th><th>Box score</th></tr></thead>
+      <tbody>${S.games.map(g => g.status === "played" ? `<tr><td class="num">${g.week}</td><td class="small">${opp(g)}</td>
+        <td class="num"><b>${g.pts.toFixed(1)}</b></td><td class="num muted">${g.proj != null ? g.proj.toFixed(1) : "–"}</td>
+        <td class="num ${g.rank <= 12 ? "delta-pos" : g.rank > 36 ? "muted" : ""}">${rk(g.rank)}</td><td class="num">${g.snap_pct != null ? g.snap_pct + "%" : "–"}</td>
+        <td class="small">${esc(g.line || "")}</td></tr>`
+        : `<tr class="muted"><td class="num">${g.week}</td><td class="small">${opp(g)}</td><td colspan="5" class="small">${GAME_STATUS[g.status]}</td></tr>`).reverse().join("")}</tbody></table></div>
+    <p class="muted small">Sleeper box scores and projections, scored with your league's settings. Most recent week first.</p>`;
 }
 
 // ---------------------------------------------------------------- deadline, buy low, timeline, league prices
@@ -1991,7 +2134,7 @@ async function viewDeadline() {
     const x = (b.asks || [])[0];
     if (!x) return '<span class="muted small">No package found that works for both sides.</span>';
     const deal = { b: b.roster_id, aGives: [{ kind: "player", id: r.id }], bGives: x.get.map(g => ({ kind: g.kind, id: g.id })) };
-    return `${x.get.map(g => `${g.kind === "player" ? posBadge(g.pos) + " " : ""}${esc(g.name)} <span class="muted small">${fmt(g.value)}</span>`).join("<br>")}
+    return `${x.get.map(g => `${g.kind === "player" ? posBadge(g.pos) + " " : ""}${pName(g)} <span class="muted small">${fmt(g.value)}</span>`).join("<br>")}
       <div class="small muted">you ${pct(x.gain_pct, 0)} · they accept ~${x.acceptance}%${x.their_weekly != null ? ` · their lineup <span class="${x.their_weekly < -0.5 ? "delta-neg" : x.their_weekly > 0.5 ? "delta-pos" : ""}">${x.their_weekly > 0 ? "+" : ""}${x.their_weekly} pts/week</span>` : ""}</div>
       ${x.their_weekly != null && x.their_weekly < -0.5 ? '<div class="small delta-neg">Weakens their lineup this season: a contender is unlikely to take it at the deadline.</div>' : ""}
       <button class="small" onclick='openInEvaluator(${JSON.stringify(deal)})'>Open in evaluator</button>`;
@@ -2233,7 +2376,7 @@ async function loadTarget(F, year) {
   catch (e) { host.innerHTML = head + `<div class="warnbox">${esc(e.message)}</div>`; return; }
   if (!$("#fu-target")) return;
   const line = n => `${n >= 0 ? `${fmt(n)} above` : `${fmt(-n)} below`} the line`;
-  const assets = (xs, show) => xs.map(a => `${a.kind === "player" ? posBadge(a.pos) + " " : ""}${esc(a.name)} <span class="muted small">${fmt(a.value)}${show ? ` → ${fmt(a.then)} in ${T.year}` : ""}</span>`).join("<br>");
+  const assets = (xs, show) => xs.map(a => `${a.kind === "player" ? posBadge(a.pos) + " " : ""}${pName(a)} <span class="muted small">${fmt(a.value)}${show ? ` → ${fmt(a.then)} in ${T.year}` : ""}</span>`).join("<br>");
   host.innerHTML = head + `<p>In <b>${T.year}</b> you're projected <b>#${T.rank}</b>, ${line(T.gap)} (the ${T.playoff_teams}th-best lineup).</p>
     ${T.deals.length ? `<div class="scroll"><table data-nosort><thead><tr><th>Partner</th><th>You give</th><th>You get</th>
       <th class="num">${hint(`Lineup ${T.year}`, HELP.yearGain)}</th><th class="num">Rank after</th><th class="num">${hint("Today", HELP.todayCost)}</th><th class="num">They accept</th><th></th></tr></thead>
@@ -2413,7 +2556,7 @@ async function viewRecap(week) {
     <p class="muted small">From each team's best lineup by this week's Sleeper projections. Game of the week: the closest game with the most playoff stakes.</p></div>` : ""}
   <div class="grid g2">
     ${R.trades.length ? `<div class="card"><h2>Trades</h2><ul class="notes">${R.trades.map(t => `<li>${t.sides.map(x => `<b>${esc(x.manager)}</b> gets ${esc(x.gets.join(", "))}`).join("; ")}. <span class="muted">${esc(t.verdict)}.</span></li>`).join("")}</ul></div>` : ""}
-    ${R.waivers.length ? `<div class="card"><h2>Biggest waiver bids</h2><table data-nosort><tbody>${R.waivers.map(b => `<tr><td>${posBadge(b.pos)} ${esc(b.player)}</td><td>${esc(b.manager)}</td><td class="num">$${b.bid}</td></tr>`).join("")}</tbody></table></div>` : ""}
+    ${R.waivers.length ? `<div class="card"><h2>Biggest waiver bids</h2><table data-nosort><tbody>${R.waivers.map(b => `<tr><td>${posBadge(b.pos)} ${pName(b, b.player)}</td><td>${esc(b.manager)}</td><td class="num">$${b.bid}</td></tr>`).join("")}</tbody></table></div>` : ""}
     ${M ? `<div class="card"><h2>Dynasty value movers</h2><table data-nosort><tbody>${[...M.up, ...M.down].map(m => `<tr><td>${posBadge(m.pos)} ${playerLink(m.id, m.name)}</td><td class="small">${esc(m.manager)}</td>
       <td class="num ${signCls(m.pct)}">${pct(m.pct, 0)}</td></tr>`).join("")}</tbody></table><p class="muted small">DynastyProcess, over the week.</p></div>` : ""}
   </div>
@@ -2448,8 +2591,8 @@ async function viewLineup(rid) {
       <div class="probbar" style="max-width:420px"><i style="flex:${L.win_recommended}"></i><i style="flex:${100 - L.win_recommended}"></i></div>` : ""}
     <p class="muted small">Sleeper's projections scored with your league's settings. Starters only for QB/RB/WR/TE slots${L.other_slots.length ? ` (set ${L.other_slots.join(", ")} yourself)` : ""}. Players whose game has started stay where they are.</p></div>
   ${C ? `<div class="card"><h2>${L.is_me ? "Changes to make in Sleeper" : "Changes from their current lineup"}</h2>
-      <div class="grid g2"><div><h3>Start</h3>${C.start.map(p => `<div>${posBadge(p.pos)} <b>${esc(p.name)}</b> <span class="muted small">${p.proj.toFixed(1)}</span></div>`).join("") || '<span class="muted small">–</span>'}</div>
-        <div><h3>Bench</h3>${C.sit.map(p => `<div>${posBadge(p.pos)} ${esc(p.name)} <span class="muted small">${p.proj.toFixed(1)}${p.why ? ` · <span class="delta-neg">${esc(p.why)}</span>` : ""}</span></div>`).join("") || '<span class="muted small">–</span>'}</div></div>
+      <div class="grid g2"><div><h3>Start</h3>${C.start.map(p => `<div>${posBadge(p.pos)} <b>${pName(p)}</b> <span class="muted small">${p.proj.toFixed(1)}</span></div>`).join("") || '<span class="muted small">–</span>'}</div>
+        <div><h3>Bench</h3>${C.sit.map(p => `<div>${posBadge(p.pos)} ${pName(p)} <span class="muted small">${p.proj.toFixed(1)}${p.why ? ` · <span class="delta-neg">${esc(p.why)}</span>` : ""}</span></div>`).join("") || '<span class="muted small">–</span>'}</div></div>
       <p class="small">Projected ${L.proj_current.toFixed(1)} → <b>${L.proj_recommended.toFixed(1)}</b>${L.win_current != null ? `, win chance ${L.win_current}% → <b>${L.win_recommended}%</b>` : ""}.</p></div>`
     : `<div class="card"><p>${L.is_me ? "Your lineup in Sleeper is already the best one for this week." : "Their lineup is already the best one for this week."}</p></div>`}
   ${L.flags.length ? `<div class="warnbox">${L.flags.map(esc).join(". ")}. Check for news before kickoff.</div>` : ""}
@@ -2466,7 +2609,7 @@ async function viewLineup(rid) {
       <td class="num">${f.proj.toFixed(1)}</td><td class="small">+${f.gain.toFixed(1)} at ${esc(f.slot.replace("SUPER_FLEX", "SF"))}</td></tr>`).join("")}</tbody></table>
       <p class="muted small">Projected this week above your weakest starter in a slot they can fill. <a href="#/pickups">Free agents →</a></p></div>` : ""}
     ${O ? `<div class="card"><h2>${esc(O.manager)}'s best lineup</h2><table data-nosort><tbody>${O.lineup.map(p => `<tr><td class="small">${esc(p.slot.replace("SUPER_FLEX", "SF").replace("_", " "))}</td>
-      <td>${posBadge(p.pos)} ${esc(p.name)} ${status(p)}</td><td class="num">${p.proj.toFixed(1)}</td></tr>`).join("")}</tbody></table></div>` : ""}
+      <td>${posBadge(p.pos)} ${pName(p)} ${status(p)}</td><td class="num">${p.proj.toFixed(1)}</td></tr>`).join("")}</tbody></table></div>` : ""}
   </div>`;
 }
 
@@ -2499,13 +2642,13 @@ async function viewRoster() {
         <tbody>${me.cuts.map(c => `<tr><td>${c.kind === "player" ? posBadge(c.pos) + " " + playerLink(c.id, c.name) : esc(c.name)} <span class="muted small">${c.age ?? ""}</span></td>
           <td class="num">${fmt(c.value)}</td><td class="num">${fmt(c.keep)}</td><td class="small">${c.taxi ? '<span class="badge tag">on taxi: a rookie takes his spot</span> ' : ""}${c.value >= 500 ? '<span class="badge tag">trade first</span>' : ""}</td></tr>`).join("")}</tbody></table>
         ${me.trade_first.length ? `<p class="small">${me.trade_first.length} of these still have trade value. Package two for one better player before the draft instead of cutting them for nothing.</p>` : ""}` : `<p class="muted">Everyone fits.</p>`}
-      ${me.next_cuts.length ? `<p class="muted small">Next in line: ${me.next_cuts.map(c => esc(c.name)).join(", ")}.</p>` : ""}</div>
+      ${me.next_cuts.length ? `<p class="muted small">Next in line: ${me.next_cuts.map(c => pName(c)).join(", ")}.</p>` : ""}</div>
   </div>
   <div class="card"><h2>Around the league</h2>
     <p class="muted small">Teams that will have to cut players next offseason. Their cut candidates are cheap to trade for now, and some will reach waivers.</p>
     <div class="scroll"><table><thead><tr><th>Team</th><th class="num">Cuts needed</th><th>Likely cuts</th></tr></thead>
       <tbody>${R.teams.map(t => `<tr><td><a href="#/team/${t.roster_id}">${esc(t.manager)}</a></td><td class="num" data-sort="${t.over}">${Math.max(0, t.over)}</td>
-        <td class="small">${t.cuts.map(c => `${esc(c.name)} <span class="muted">${fmt(c.value)}</span>`).join(", ") || '<span class="muted">None</span>'}</td></tr>`).join("")}</tbody></table></div>
+        <td class="small">${t.cuts.map(c => `${pName(c)} <span class="muted">${fmt(c.value)}</span>`).join(", ") || '<span class="muted">None</span>'}</td></tr>`).join("")}</tbody></table></div>
     ${R.likely_cuts.some(c => c.kind === "player" && c.value >= 500) ? `<h3>Best players likely to be cut</h3><table data-nosort><tbody>${R.likely_cuts.filter(c => c.kind === "player" && c.value >= 500).map(c => `<tr>
       <td>${posBadge(c.pos)} ${playerLink(c.id, c.name)} <span class="muted small">${esc(c.manager)}</span></td><td class="num">${fmt(c.value)}</td>
       <td><button onclick='openInEvaluator(${JSON.stringify({ b: c.roster_id, aGives: [], bGives: [{ kind: "player", id: c.id }] })})'>Trade for</button></td></tr>`).join("")}</tbody></table>` : ""}
@@ -2714,13 +2857,14 @@ async function viewPlan() {
   if (!plan.length) return head + `<div class="card"><p class="muted">Your plan is empty. Build a trade in <a href="#/trade">Evaluate</a> and click <b>Add to trade plan</b>.</p></div>`;
   const R = await api("/api/plan", { method: "POST", body: { trades: plan.map(t => ({ b_rid: t.b, a_gives: t.aGives, b_gives: t.bGives })) } });
   setTimeout(() => wirePlan(plan), 0);
-  const list = xs => xs.map(a => `${a.kind === "player" ? posBadge(a.pos) + " " : ""}${esc(a.name)} <span class="muted small">${fmt(a.value)}</span>`).join("<br>") || '<span class="muted small">nothing</span>';
+  const list = xs => xs.map(a => `${a.kind === "player" ? posBadge(a.pos) + " " : ""}${pName(a)} <span class="muted small">${fmt(a.value)}</span>`).join("<br>") || '<span class="muted small">nothing</span>';
   // Only show a change that's visible at the displayed precision.
   const arrow = (b, a, f = fmt, better = (x, y) => x > y) => `${f(b)} → <b>${f(a)}</b>${f(a) !== f(b) ? ` <span class="small ${better(a, b) ? "delta-pos" : "delta-neg"}">${a - b > 0 ? "+" : ""}${f(a - b)}</span>` : ""}`;
   const T = R.timeline, C = R.composition, N = R.now;
   const p1 = v => (+v).toFixed(1);
   return head + `
   ${R.problems.length ? `<div class="warnbox"><b>Check these:</b><ul class="notes">${R.problems.map(x => `<li>${esc(x)}</li>`).join("")}</ul></div>` : ""}
+  ${R.conflicts.length ? `<div class="card"><h2>${hint("Overlapping trades", HELP.planOverlap)}</h2>${R.conflicts.map(c => overlapHTML(c, list)).join("")}</div>` : ""}
   <div class="tiles" style="margin:0 0 16px">
     <div class="tile"><div class="k">Market value</div><div class="v">${R.total.get - R.total.give >= 0 ? "+" : ""}${fmt(R.total.get - R.total.give)}</div><div class="d muted">${fmt(R.total.get)} in · ${fmt(R.total.give)} out</div></div>
     <div class="tile"><div class="k">Team-context gain</div><div class="v ${signCls(R.total.gain)}">${R.total.gain >= 0 ? "+" : ""}${fmt(R.total.gain)}</div><div class="d muted">sum over the trades</div></div>
@@ -2758,11 +2902,71 @@ async function viewPlan() {
       <tr><td>Active roster (limit ${R.roster.limit})</td><td class="num">${arrow(R.roster.before.active, R.roster.after.active, String, (x, y) => x < y)}</td></tr>
       <tr><td>Cuts needed</td><td class="num">${arrow(R.roster.before.over, R.roster.after.over, String, (x, y) => x < y)}</td></tr></tbody></table>
       ${R.roster.after.cuts.length ? `<p class="small">First in line to cut: ${R.roster.after.cuts.map(esc).join(", ")}. <a href="#/roster">Roster room →</a></p>` : ""}</div>
+  </div>
+  <div class="card" id="plan-next"><h2>${hint("Next trades", HELP.planNext)}</h2><p class="muted small">Finding trades that build on this plan…</p></div>`;
+}
+
+HELP.planNext = "Trade suggestions (the same model as Find trades) run on the league as your plan leaves it: everyone's rosters after the trades, with lineups, needs and surpluses redone. Values, tendencies and windows are today's. Players and picks the plan already moves are left out.";
+async function loadPlanNext(plan) {
+  let R;
+  try { R = await api("/api/plan/next", { method: "POST", body: { trades: plan.map(t => ({ b_rid: t.b, a_gives: t.aGives, b_gives: t.bGives })) } }); }
+  catch (e) { const h = $("#plan-next"); if (h) h.innerHTML = `<h2>Next trades</h2><div class="warnbox">${esc(e.message)}</div>`; return; }
+  const host = $("#plan-next");
+  if (!host) return;
+  host.innerHTML = `<h2>${hint("Next trades", HELP.planNext)}</h2>
+    <p class="muted small">If ${R.applied === 1 ? "this trade goes" : `these ${R.applied} trades go`} through${R.needs.length ? `, your biggest needs become ${R.needs.map(posBadge).join(" ")}` : ""}. Trades that would work next:</p>
+    ${R.suggestions.length ? R.suggestions.map((s, i) => `<div class="row spread" style="margin-top:12px"><h3 style="margin:0"><a href="#/team/${s.roster_id}">${esc(s.manager)}</a> ${windowBadge(s.window)}</h3>
+        <button class="primary small" data-next="${i}">Add to plan</button></div>${suggestionCard(s, s.roster_id)}`).join("")
+      : '<p class="muted">No trades found that help you and that they would plausibly accept.</p>'}
+    <p class="muted small">"Open in evaluator" scores the trade on today's rosters, so its numbers can differ from these.</p>`;
+  $$("[data-next]").forEach(b => b.onclick = () => {
+    const s = R.suggestions[+b.dataset.next];
+    savePlan([...plan, { b: s.roster_id, aGives: s.give.map(a => ({ kind: a.kind, id: a.id })), bGives: s.get.map(a => ({ kind: a.kind, id: a.id })) }]);
+    toast(`Added to your trade plan (${plan.length + 1} trades)`);
+    route();
+  });
+}
+
+HELP.planOverlap = "Two trades that both send out (or both bring in) the same player or pick can't both happen. Each is run as your plan without the other. The pick is the one with the higher expected gain: your team-context gain times the chance they accept.";
+// Two trades that use the same asset, side by side, with which one to keep and why.
+function overlapHTML(c, list) {
+  const [A, B] = c.options, n = o => `Trade ${o.index + 1}`;
+  const head = `<p><b>${n(A)}</b> and <b>${n(B)}</b> both use ${c.shared.map(esc).join(", ")}.</p>`;
+  if (c.pick == null) return `<div class="sugg">${head}<p class="muted small">${esc(c.note)}</p></div>`;
+  const best = c.pick === A.index ? A : B, other = best === A ? B : A;
+  // Bold the better value in each row; higher is better unless lower = true.
+  const row = (label, f, get, lower = false) => {
+    const [a, b] = [get(A), get(B)];
+    const win = a == null || b == null || a === b ? null : (lower ? a < b : a > b) ? 0 : 1;
+    return `<tr><td>${label}</td>${[a, b].map((v, i) => `<td class="num">${i === win ? `<b>${f(v)}</b>` : f(v)}</td>`).join("")}</tr>`;
+  };
+  const sgn = v => `${v > 0 ? "+" : ""}${fmt(v)}`;
+  const verdict = best.expected <= 0 ? `Neither is a gain for you once the chance they say no is counted; <b>${n(best)}</b> costs you less.`
+    : c.close ? `Close call: <b>${n(best)}</b> with ${esc(best.manager)} edges it.`
+    : `Go with <b>${n(best)}</b> with ${esc(best.manager)}.`;
+  return `<div class="sugg">${head}
+    <div class="scroll"><table data-nosort><thead><tr><th></th>${[A, B].map(o => `<th class="num">${n(o)} · ${esc(o.manager)}${o === best ? ' <span class="badge acc-Likely">pick</span>' : ""}</th>`).join("")}</tr></thead><tbody>
+      <tr><td>You give</td>${[A, B].map(o => `<td class="num small">${list(o.give)}</td>`).join("")}</tr>
+      <tr><td>You get</td>${[A, B].map(o => `<td class="num small">${list(o.get)}</td>`).join("")}</tr>
+      ${row(hint("Your gain", HELP.teamValue), sgn, o => o.gain)}
+      ${row("Market", v => pct(v, 0), o => o.market_pct)}
+      ${row("They accept", v => `~${v}%`, o => o.acceptance)}
+      ${row(hint("Expected gain", HELP.planOverlap), sgn, o => o.expected)}
+      ${A.years.slice(1).map((y, k) => row(`${esc(y)} rank`, v => `#${v}`, o => o.ranks[k + 1], true)).join("")}
+      ${A.playoff_pct != null ? row("Playoff odds", v => `${Math.round(v)}%`, o => o.playoff_pct) : ""}
+      ${row("Cuts next offseason", String, o => o.cuts, true)}
+    </tbody></table></div>
+    <p style="margin-top:8px">${verdict}</p>
+    <ul class="notes">${c.reasons.pick.map(r => `<li>${esc(r)}</li>`).join("")}</ul>
+    ${c.reasons.other.length ? `<div class="small" style="margin-top:6px"><b>In favor of ${n(other)}:</b></div><ul class="notes">${c.reasons.other.map(r => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
+    <div class="row" style="margin-top:6px">${[best, other].map(o => `<button class="${o === best ? "primary" : ""}" data-keep="${o.index}" data-drop="${(o === A ? B : A).index}">Keep ${n(o)}</button>`).join(" ")}
+      <span class="muted small">Removes the other one from your plan.</span></div>
   </div>`;
 }
 
 function wirePlan(plan) {
   const save = p => { savePlan(p); route(); };
+  $$("[data-keep]").forEach(b => b.onclick = () => save(plan.filter((_, i) => i !== +b.dataset.drop)));
   $$("[data-remove]").forEach(b => b.onclick = () => save(plan.filter((_, i) => i !== +b.dataset.remove)));
   $$("[data-up]").forEach(b => b.onclick = () => { const i = +b.dataset.up, p = [...plan]; [p[i - 1], p[i]] = [p[i], p[i - 1]]; save(p); });
   $$("[data-down]").forEach(b => b.onclick = () => { const i = +b.dataset.down, p = [...plan]; [p[i + 1], p[i]] = [p[i], p[i + 1]]; save(p); });
@@ -2773,6 +2977,7 @@ function wirePlan(plan) {
   });
   const c = $("#plan-clear");
   if (c) c.onclick = () => { if (confirm("Clear every trade from your plan?")) save([]); };
+  loadPlanNext(plan);
 }
 
 // ---------------------------------------------------------------- navigation
@@ -2909,7 +3114,7 @@ async function viewTrack() {
   const H = T.h2[0], V = T.values[0], S = T.suggestions;
   const rel = s => (!s || !s.n ? '<span class="muted">–</span>' : `<span class="${signCls(s.median_pct)}">${pct(s.median_pct, 0)}</span> <span class="muted small">${s.beat_pct}% beat · ${s.n}</span>`);
   const names = xs => xs.map(x => `${esc(x.name)} <span class="muted small">(${x.proj != null ? `proj ${x.proj}, ` : ""}scored ${x.pts})</span>`).join(", ");
-  const assets = xs => xs.map(a => `${a.pos && a.pos !== "PICK" ? posBadge(a.pos) + " " : ""}${esc(a.name)}`).join("<br>");
+  const assets = xs => xs.map(a => `${a.pos && a.pos !== "PICK" ? posBadge(a.pos) + " " : ""}${pName(a)}`).join("<br>");
   const waiting = T.first ? `The first snapshot was saved ${shortDate(T.first)}.` : "The first snapshot is saved the next time the app builds the league.";
 
   const lineupCard = `<div class="card"><h2>${hint("Start/sit", HELP.trLineup)}</h2>
@@ -2995,7 +3200,7 @@ async function viewDraftDay(replay, at) {
     </div>` : D.status === "complete" ? `<p>The draft is complete.</p>` : "";
   const onClock = C && C.is_me && D.board.length ? (() => {
     const top = [...D.board].sort((a, b) => a.rank - b.rank).slice(0, 3);
-    return `<div class="warnbox"><b>You're on the clock.</b> Your top three: ${top.map(b => `<b>${esc(b.name)}</b> (${b.pos}, ${fmt(b.value)}${N2 && b.after != null ? `; ${b.after}% to last until ${esc(N2.label)} if you pass` : ""})`).join(", ")}.
+    return `<div class="warnbox"><b>You're on the clock.</b> Your top three: ${top.map(b => `<b>${pName(b)}</b> (${b.pos}, ${fmt(b.value)}${N2 && b.after != null ? `; ${b.after}% to last until ${esc(N2.label)} if you pass` : ""})`).join(", ")}.
       ${N2 ? " If two are close, take the one less likely to be there at your next pick." : ""}</div>`;
   })() : "";
   const showNext = N && N.away > 0;
@@ -3012,7 +3217,7 @@ async function viewDraftDay(replay, at) {
   const chanceCells = xs => xs.map(c => `<td class="num">${c != null ? c + "%" : "–"}</td>`).join("");
   const tgHead = tg.map(t => `<th class="num">${esc(t.name.split(" ").slice(-1)[0])} there</th>`).join("");
   const moves = N && tg.length ? `<div class="grid g2">
-    <div class="card"><h2>Moving up</h2>${D.up.length ? `<p class="muted small">Picks before yours: what each costs in pick value, and the chance your top targets (${tg.map(t => esc(t.name)).join(", ")}) are still there when it comes up. At your own pick: ${tg.map(t => `${t.next}%`).join(", ")}.</p>
+    <div class="card"><h2>Moving up</h2>${D.up.length ? `<p class="muted small">Picks before yours: what each costs in pick value, and the chance your top targets (${tg.map(t => pName(t)).join(", ")}) are still there when it comes up. At your own pick: ${tg.map(t => `${t.next}%`).join(", ")}.</p>
       <div class="scroll"><table data-nosort><thead><tr><th>Pick</th><th>Owner</th><th class="num">${hint("Costs", HELP.ddCost)}</th>${tgHead}</tr></thead>
         <tbody>${D.up.map(u => `<tr><td>${esc(u.label)}</td><td><a href="#/team/${u.roster_id}">${esc(u.manager)}</a></td><td class="num">${fmt(u.cost)}</td>${chanceCells(u.chances)}</tr>`).join("")}</tbody></table></div>`
       : `<p class="muted">You're on the clock: nothing to move up to.</p>`}</div>
@@ -3021,7 +3226,7 @@ async function viewDraftDay(replay, at) {
         <tbody>${D.down.map(u => `<tr><td>${esc(u.label)}</td><td><a href="#/team/${u.roster_id}">${esc(u.manager)}</a></td><td class="num">${fmt(u.gain)}</td>${chanceCells(u.chances)}</tr>`).join("")}</tbody></table></div>`
       : `<p class="muted">No other team's picks right after yours.</p>`}</div>
   </div>
-  ${(D.ref || []).length ? `<p class="muted small">For scale: ${D.ref.map(r => `${esc(r.name)} ${fmt(r.value)}`).join(" · ")}.</p>` : ""}` : "";
+  ${(D.ref || []).length ? `<p class="muted small">For scale: ${D.ref.map(r => `${pName(r)} ${fmt(r.value)}`).join(" · ")}.</p>` : ""}` : "";
   const recent = (D.recent || []).length ? `<div class="card"><h2>Latest picks</h2><table data-nosort><tbody>${D.recent.map(r => `<tr class="${r.mine ? "mine" : ""}"><td>${esc(r.label)}</td><td>${esc(r.manager)}</td>
       <td>${r.pos ? posBadge(r.pos) + " " : ""}${playerLink(r.id, r.name)}</td><td class="num">${fmt(r.value)}</td></tr>`).join("")}</tbody></table></div>` : "";
   return head + intro + tiles + `</div>` + onClock + board + moves + recent;
@@ -3145,7 +3350,7 @@ async function viewMatchup(rid, week) {
         <button data-play="${esc((shown[i + 1] || cur).key)}" ${i < shown.length - 1 ? "" : "disabled"}>Older ▶</button></div></div>`
     : `<p class="muted">${M.plays.length ? "No big plays for this filter." : M.live ? "No big plays yet. They show up here as they happen: touchdowns, turnovers, 20+ yard plays, 5+ point plays and injuries for anyone on either roster." : "No big plays this week."}</p>`;
   const list = shown.length ? `<div class="mu-list">${shown.map(p => `<div class="mu-item ${p.side} ${p.key === (cur || {}).key ? "on" : ""}" data-play="${esc(p.key)}" tabindex="0">
-      ${tag(p)} <span class="muted small">${when(p)}</span> ${injTag(p)}${posBadge(p.pos)} <b>${esc(p.name)}</b> ${esc(p.headline)} ${ptsTxt(p)}</div>`).join("")}</div>` : "";
+      ${tag(p)} <span class="muted small">${when(p)}</span> ${injTag(p)}${posBadge(p.pos)} <b>${pName(p)}</b> ${esc(p.headline)} ${ptsTxt(p)}</div>`).join("")}</div>` : "";
 
   const win = M.win_pct;
   const score = (T, cls, who) => `<div style="text-align:${cls}"><div class="small"><span class="mu-dot ${who}"></span> <b>${esc(sideName(who))}</b></div><div class="mu-score">${T.points.toFixed(2)}</div><div class="muted small">projected ${T.final.toFixed(1)}</div></div>`;

@@ -64,7 +64,7 @@ def analyze(lg) -> dict:
             "n_players": len(players), "n_picks": len(t["picks"]), "age": t["avg_age_weighted"],
             "age_value": {k: round(v) for k, v in ages.items()}, "pick_seasons": pick_seasons,
             "need_now": t["need_now"], "need_future": t["need_future"],
-            "top_players": [{"name": a["name"], "pos": a["pos"], "value": a["value"]} for a in players[:3]],
+            "top_players": [{"id": a["id"], "name": a["name"], "pos": a["pos"], "value": a["value"]} for a in players[:3]],
             "history": hist["values"][rid],
         })
     teams.sort(key=lambda x: x["franchise_rank"])
