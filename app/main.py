@@ -13,8 +13,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import (agenda, buylow, calcfit, checks, config, counter, deadline, draftday, draftprep, drafts, feed, future, health, lineup, live, market,
-               offseason, opportunity, pickhistory, pickups, pitch, plan, playerstats, rankings, recap, records, retro, rookieclass, roster, season, seasonal,
-               secondhalf, store, suggest, target, track, trade, waivers)
+               goalplan, offseason, opportunity, pickhistory, pickups, pitch, plan, playerstats, rankings, recap, records, retro, rookieclass, roster, season, seasonal,
+               secondhalf, store, suggest, target, track, trade, waivers, wrapped)
 from .config import ROOT
 from .league import League
 from .values import SOURCE_LABELS
@@ -248,6 +248,17 @@ def plan_next(body: PlanIn):
     return _clean(plan.next_trades(lg, [t.model_dump() for t in body.trades]))
 
 
+@app.get("/api/plan/propose")
+def plan_propose(goal: str = "1"):
+    """A sample plan: a few trades chosen to make you good in a target year."""
+    lg = league()
+    if not lg.me:
+        raise HTTPException(400, "Your username wasn't found in the league; check Settings.")
+    if goal not in goalplan.GOALS:
+        raise HTTPException(400, f"goal must be one of {', '.join(goalplan.GOALS)}")
+    return _memo(f"goalplan:{goal}", lg, lambda: _clean(goalplan.propose(lg, goal)))
+
+
 @app.post("/api/trade-impact")
 def trade_impact(body: TradeIn):
     """Both teams' playoff odds and projected draft slot before and after the trade."""
@@ -387,6 +398,23 @@ def season_report():
 def draft_prep():
     lg = league()
     return _memo("draftprep", lg, lambda: _clean(draftprep.analyze(lg, _season(lg))))
+
+
+@app.get("/api/wrapped")
+def wrapped_seasons():
+    """Seasons with games to recap, newest first."""
+    lg = league()
+    return {"seasons": _memo("wrapped-seasons", lg, lambda: wrapped.seasons(lg))}
+
+
+@app.get("/api/wrapped/{season}")
+def wrapped_season(season: int):
+    """One season's story in stats: the wrapped slides and the dashboard behind them."""
+    lg = league()
+    out = _memo(f"wrapped:{season}", lg, lambda: _clean(wrapped.analyze(lg, season)))
+    if not out:
+        raise HTTPException(404, f"No games found for {season}.")
+    return out
 
 
 @app.get("/api/rookie-classes")
@@ -577,7 +605,12 @@ def data_health():
 
 @app.get("/api/status")
 def status():
-    return {"built": _state["built"], "auto_refresh_minutes": config.load().get("auto_refresh_minutes")}
+    return {"built": _state["built"], "auto_refresh_minutes": config.load().get("auto_refresh_minutes"), "version": _ui_version()}
+
+
+def _ui_version() -> int:
+    """Changes whenever the page's code changes, so an open tab can tell it's running an old copy."""
+    return int(max((ROOT / "static" / f).stat().st_mtime for f in ("index.html", "app.js", "styles.css")))
 
 
 def _lan_ip() -> str | None:

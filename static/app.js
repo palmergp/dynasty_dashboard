@@ -270,7 +270,7 @@ async function dashFeed() {
 
 // Header: when the data was last rebuilt, and a prompt when the server has newer data.
 (function watchUpdates() {
-  let seen = null;
+  let seen = null, version = null;
   const ago = s => { const m = Math.round((Date.now() / 1000 - s) / 60); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
   async function tick() {
     try {
@@ -278,6 +278,12 @@ async function dashFeed() {
       const el = $("#updated");
       if (!el || !s.built) return;
       if (seen === null) seen = s.built;
+      if (version === null) version = s.version;
+      if (s.version && version && s.version !== version) {  // the app itself was updated: this tab runs old code
+        el.innerHTML = `· <button class="chip on" id="new-version">New version · reload</button>`;
+        $("#new-version").onclick = () => location.reload();
+        return;
+      }
       el.innerHTML = s.built > seen
         ? `· <button class="chip on" id="new-data">New data · refresh</button>`
         : `· updated ${ago(s.built)}`;
@@ -2854,7 +2860,10 @@ async function viewPlan() {
   const head = `<div class="card"><h1>Trade plan</h1>
     <p class="muted">A rebuild is usually several trades. Add trades from <a href="#/trade">Evaluate</a> (you as Team A) and see them together: whether they clash, and what they do to your season, your rebuild timeline and your roster.
       Trades run in order, so a later trade can send on something an earlier one brought in. The plan is saved in this browser.</p></div>`;
-  if (!plan.length) return head + `<div class="card"><p class="muted">Your plan is empty. Build a trade in <a href="#/trade">Evaluate</a> and click <b>Add to trade plan</b>.</p></div>`;
+  if (!plan.length) {
+    setTimeout(() => wirePropose(plan), 0);
+    return head + `<div class="card"><p class="muted">Your plan is empty. Build a trade in <a href="#/trade">Evaluate</a> and click <b>Add to trade plan</b>, or let the app propose one below.</p></div>` + proposeCard(state.planGoal || "1");
+  }
   const R = await api("/api/plan", { method: "POST", body: { trades: plan.map(t => ({ b_rid: t.b, a_gives: t.aGives, b_gives: t.bGives })) } });
   setTimeout(() => wirePlan(plan), 0);
   const list = xs => xs.map(a => `${a.kind === "player" ? posBadge(a.pos) + " " : ""}${pName(a)} <span class="muted small">${fmt(a.value)}</span>`).join("<br>") || '<span class="muted small">nothing</span>';
@@ -2903,7 +2912,8 @@ async function viewPlan() {
       <tr><td>Cuts needed</td><td class="num">${arrow(R.roster.before.over, R.roster.after.over, String, (x, y) => x < y)}</td></tr></tbody></table>
       ${R.roster.after.cuts.length ? `<p class="small">First in line to cut: ${R.roster.after.cuts.map(esc).join(", ")}. <a href="#/roster">Roster room →</a></p>` : ""}</div>
   </div>
-  <div class="card" id="plan-next"><h2>${hint("Next trades", HELP.planNext)}</h2><p class="muted small">Finding trades that build on this plan…</p></div>`;
+  <div class="card" id="plan-next"><h2>${hint("Next trades", HELP.planNext)}</h2><p class="muted small">Finding trades that build on this plan…</p></div>
+  ${proposeCard(state.planGoal || "1")}`;
 }
 
 HELP.planNext = "Trade suggestions (the same model as Find trades) run on the league as your plan leaves it: everyone's rosters after the trades, with lineups, needs and surpluses redone. Values, tendencies and windows are today's. Players and picks the plan already moves are left out.";
@@ -2978,6 +2988,417 @@ function wirePlan(plan) {
   const c = $("#plan-clear");
   if (c) c.onclick = () => { if (confirm("Clear every trade from your plan?")) save([]); };
   loadPlanNext(plan);
+  wirePropose(plan);
+}
+
+// ---- a proposed plan for a goal year
+HELP.planPropose = "A few trades picked to make you good in the year you choose. The target is your projected starting lineup that year (the rebuild timeline's model: players age along the age curves, picks become rookies at their draft), plus a little weight on your whole roster's value then, so the plan doesn't empty the cupboard. Win now uses this season's production instead. Trades are added one at a time, each the best expected gain (your gain toward the goal x the chance they accept) with the league re-projected after the ones before it. Partners judge each deal by their own team and the calculators they seem to use, as in Find trades. No trade overpays by more than 30% at market.";
+const PLAN_GOALS = [["now", "Win now"], ["1", 1], ["2", 2], ["3", 3]];
+function proposeCard(goal) {
+  const yr = n => (state.ov?.league?.season || new Date().getFullYear()) + n;
+  return `<div class="card" id="plan-propose"><h2>${hint("Propose a plan", HELP.planPropose)}</h2>
+    <p class="muted small">Pick a goal and get a sample set of trades built around it. Nothing changes until you add it to your plan.</p>
+    <div class="row" role="group" aria-label="Goal">${PLAN_GOALS.map(([k, n]) => `<button class="chip ${k === goal ? "on" : ""}" data-goal="${k}" aria-pressed="${k === goal}">${typeof n === "number" ? `Compete in ${yr(n)}` : n}</button>`).join("")}</div>
+    <div id="plan-propose-body"><p class="muted small">Building a plan…</p></div></div>`;
+}
+async function loadPropose(plan) {
+  const host = $("#plan-propose-body");
+  if (!host) return;
+  const goal = state.planGoal || "1";
+  let R;
+  try { R = await cachedApi(`propose:${goal}`, `/api/plan/propose?goal=${goal}`); }
+  catch (e) { host.innerHTML = `<div class="warnbox">${esc(e.message)}</div>`; return; }
+  if (!$("#plan-propose-body") || (state.planGoal || "1") !== goal) return;
+  const list = xs => xs.map(a => `${a.kind === "player" ? posBadge(a.pos) + " " : ""}${pName(a)} <span class="muted small">${fmt(a.value)}</span>`).join("<br>");
+  if (!R.trades.length) { host.innerHTML = `<p class="muted">No trades found that move you toward ${esc(R.label.toLowerCase())} and that partners would plausibly accept.</p>`; return; }
+  const T = R.timeline, N = R.now, h = R.year_index;
+  const target = R.year === "Now" ? "this season" : R.year;
+  const warn = [];
+  if (h === 0 && N && N.playoff_pct[1] < 5) warn.push(`Even with these trades your playoff odds this season stay at ${Math.round(N.playoff_pct[1])}%: there isn't enough season left. A later goal fits better.`);
+  if (T) {
+    const worse = T.years.map((y, i) => [y, T.rank[0][i], T.rank[1][i]]).filter(([, a, b], i) => i !== h && b - a >= 3);
+    if (worse.length) warn.push(`The cost: ${worse.map(([y, a, b]) => `${esc(y)} rank #${a} → #${b}`).join(", ")}.`);
+  }
+  warn.push(...R.problems.map(esc));
+  host.innerHTML = `
+    <div class="tiles" style="margin:12px 0">
+      <div class="tile mine"><div class="k">${esc(R.year === "Now" ? "Rank this season" : `${R.year} rank`)}</div><div class="v">#${R.start.rank} → #${R.end.rank}</div>
+        <div class="d muted">lineup ${compact(R.start.strength)} → ${compact(R.end.strength)}, on ${esc(R.basis)}</div></div>
+      ${R.total ? `<div class="tile"><div class="k">Market value</div><div class="v">${R.total.get - R.total.give >= 0 ? "+" : ""}${fmt(R.total.get - R.total.give)}</div><div class="d muted">${fmt(R.total.get)} in · ${fmt(R.total.give)} out</div></div>` : ""}
+      ${N && (h === 0 || N.playoff_pct[0] >= 1) ? `<div class="tile"><div class="k">Playoff odds this season</div><div class="v">${Math.round(N.playoff_pct[0])}% → ${Math.round(N.playoff_pct[1])}%</div><div class="d muted">title ${Math.round(N.title_pct[0])}% → ${Math.round(N.title_pct[1])}%</div></div>` : ""}
+    </div>
+    ${T ? `<div class="scroll"><table data-nosort><thead><tr><th>Projected rank</th>${T.years.map((y, i) => `<th class="num">${i === h ? `<b>${esc(y)}</b>` : esc(y)}</th>`).join("")}</tr></thead>
+      <tbody><tr><td>Now</td>${T.rank[0].map(r => `<td class="num">#${r}</td>`).join("")}</tr>
+      <tr><td>With this plan</td>${T.rank[1].map((r, i) => `<td class="num ${r < T.rank[0][i] ? "delta-pos" : r > T.rank[0][i] ? "delta-neg" : ""}">${i === h ? `<b>#${r}</b>` : `#${r}`}</td>`).join("")}</tr></tbody></table></div>
+      <p class="muted small">Ranks by projected lineup on dynasty values (the rebuild timeline), top ${T.playoff_teams} make the playoffs.</p>` : ""}
+    ${warn.length ? `<div class="warnbox"><ul class="notes">${warn.map(w => `<li>${w}</li>`).join("")}</ul></div>` : ""}
+    ${R.trades.map((t, i) => `<div class="sugg"><div class="row spread"><h3 style="margin:0">Trade ${i + 1} with <a href="#/team/${t.b_rid}">${esc(t.manager)}</a> ${windowBadge(t.window)}</h3>
+        <span class="small">~${t.acceptance}% they accept · market <span class="${signCls(t.market_pct)}">${pct(t.market_pct, 0)}</span> · ${esc(target)} rank #${t.rank[0]} → <b>#${t.rank[1]}</b></span></div>
+      <div class="grid g2" style="margin-top:6px"><div><div class="muted small">You give</div>${list(t.give)}</div><div><div class="muted small">You get</div>${list(t.get)}</div></div>
+      ${t.why.length ? `<ul class="notes">${t.why.slice(0, 5).map(w => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}</div>`).join("")}
+    <div class="row" style="margin-top:10px"><button class="primary" id="propose-use">Use this plan</button><button id="propose-add">Add to my plan</button>
+      <span class="muted small">${plan.length ? `Use replaces your ${plan.length}-trade plan; Add puts these after it.` : "Then tweak it: reorder, edit or remove trades below."} Odds and values are projections; check each trade in Evaluate before you send it.</span></div>`;
+  const asPlan = R.refs.map(t => ({ b: t.b_rid, aGives: t.a_gives, bGives: t.b_gives }));
+  $("#propose-use").onclick = () => {
+    if (plan.length && !confirm(`Replace your ${plan.length}-trade plan with these ${asPlan.length} trades?`)) return;
+    savePlan(asPlan); toast(`Plan set: ${asPlan.length} trades for ${R.label.toLowerCase()}`); route();
+  };
+  $("#propose-add").onclick = () => { savePlan([...plan, ...asPlan]); toast(`Added ${asPlan.length} trades to your plan`); route(); };
+}
+function wirePropose(plan) {
+  $$("[data-goal]").forEach(b => b.onclick = () => {
+    state.planGoal = b.dataset.goal;
+    $$("[data-goal]").forEach(x => { x.classList.toggle("on", x === b); x.setAttribute("aria-pressed", x === b); });
+    $("#plan-propose-body").innerHTML = '<p class="muted small">Building a plan…</p>';
+    loadPropose(plan);
+  });
+  loadPropose(plan);
+}
+
+// ---------------------------------------------------------------- season wrapped
+// A season's story: a full-screen recap that reveals one stat at a time, then a dashboard to explore.
+Object.assign(HELP, {
+  allPlay: "Wins if you'd played every team every week: each week counts the share of the league you outscored. A fairer read of how good a team was than its record.",
+  luck: "Actual wins minus all-play wins. Positive = the schedule helped (you won more than your scores deserved).",
+  coachPct: "Points you started as a share of the best lineup you could have started each week (in hindsight, from your own roster).",
+  benchPts: "Points left on the bench over the season: best possible lineup minus the one you started, summed over the weeks.",
+  lineupLosses: "Losses your best possible lineup that week would have won.",
+  pickupPts: "Points he scored in that manager's starting lineup for the rest of the season after the pickup.",
+  fleece: "Trades graded by today's values, so a fleece can still change.",
+  maxPf: "Max points for: what the team would have scored starting its best possible lineup every regular-season week (Sleeper's number). The league uses it to set the draft order.",
+  butterfly: "For every game, the smallest one-for-one lineup swap (a bench player for a starter he could have replaced) that flips the result. The season is then replayed with that one change: the standings, the seeds, and the league's real playoff bracket using every team's actual weekly scores. Only swaps that change the champion are shown, mistakes first, then the smallest swing. Teams out of the bracket still set lineups for consolation games, so their real scores those weeks are used.",
+});
+// The butterfly effect, as a chain of sentences.
+function bfLines(b) {
+  const P = x => `${esc(x.name)} (${num1(x.points)})`, sc = (a, c) => `${num2(a)}–${num2(c)}`;
+  const L = [`Week ${b.week}${b.playoffs ? ", in the playoffs" : ""}: <b>${esc(b.manager)}</b> started ${P(b.started)} over ${P(b.benched)} and ${b.won ? "beat" : "lost to"} <b>${esc(b.opp)}</b>, ${sc(b.points, b.opp_points)}.`,
+    `Start ${esc(b.benched.name)} instead and ${esc(b.manager)} ${b.won ? "loses" : "wins"}, ${sc(b.alt_points, b.opp_points)}.`];
+  if (b.moved.length) L.push("That one game reshuffles the playoffs: " + b.moved.map(m => m.from == null ? `<b>${esc(m.manager)}</b> gets in as the ${m.to} seed`
+    : m.to == null ? `<b>${esc(m.manager)}</b> misses them` : `<b>${esc(m.manager)}</b> goes from the ${m.from} seed to the ${m.to}`).join(", ") + ".");
+  const f = b.fate;
+  if (f && f.kind === "missed") L.push(`<b>${esc(b.champion)}</b>, the real champion, misses the playoffs.`);
+  else if (f && f.opp_id !== b.new_champion_id) L.push(`<b>${esc(b.champion)}</b>, the real champion, loses to ${esc(f.opp)} in the ${f.round}, ${sc(f.points, f.opp_points)}.`);
+  L.push(`And <b>${esc(b.new_champion)}</b> wins the title${b.new_path.length ? `, beating ${b.new_path.map(g => `${esc(g.opp)} ${sc(g.points, g.opp_points)}`).join(", then ")}` : ""}.`);
+  if (b.champion_id !== b.user_id && b.champion_id !== b.opp_id) L.push(`All from a ${num1(Math.abs(b.swing))}-point lineup call in a game ${esc(b.champion)} didn't even play in.`);
+  return L;
+}
+const WR_THEMES = [["#1e1b4b", "#4338ca"], ["#052e16", "#15803d"], ["#4c0519", "#be123c"], ["#431407", "#c2410c"],
+  ["#0c1e3e", "#1d4ed8"], ["#2e1065", "#7e22ce"], ["#042f2e", "#0f766e"]];
+const num1 = v => (+v).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const num2 = v => (+v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const wrappedData = season => cachedApi(`wrapped:${season}`, `/api/wrapped/${season}`);
+
+async function viewWrapped(season) {
+  const { seasons } = await cachedApi("wrapped-seasons", "/api/wrapped");
+  if (!seasons.length) return `<div class="card"><h1>Season wrapped</h1><p class="muted">No games played yet.</p></div>`;
+  const year = season ? +season : (seasons.find(s => s.done) || seasons[0]).season;
+  const W = await wrappedData(year);
+  setTimeout(() => wireWrapped(W), 0);
+  const me = W.me, so = W.done ? "" : " so far";
+  const mark = x => x.user_id === me ? ' class="me"' : "";
+  const g = W.games, P = W.players, K = W.pickups, T = W.trades, L = W.lineups, D = W.draft;
+  const gameRow = (x, val) => `<tr${mark(x)}><td><b>${esc(x.manager)}</b> <span class="muted small">vs ${esc(x.opp)}</span></td>
+    <td class="num">${val(x)}</td><td class="small muted">wk ${x.week}${x.playoffs ? " · playoffs" : ""}</td></tr>`;
+  const S = W.standings;
+  const best = (k, dir = 1) => [...S].sort((a, b) => dir * ((b[k] ?? -1e9) - (a[k] ?? -1e9)))[0];
+  const awards = [
+    ["Luckiest", W.luck.lucky, t => `+${num1(t.luck)} wins vs. all-play`],
+    ["Unluckiest", W.luck.unlucky, t => `${num1(t.luck)} wins vs. all-play`],
+    ["Best lineups", L.best_coach, t => `${num1(t.coach_pct)}% of the best possible`],
+    ["Most points benched", L.most_bench, t => `${num1(t.bench_pts)} points`],
+    ["Longest win streak", best("streak"), t => `${t.streak} straight`],
+    ["Most moves", K.most_active, t => `${t.n} pickups${t.tied > 1 ? ` (${t.tied}-way tie)` : ""}`],
+    ["Biggest spender", best("faab"), t => `$${t.faab} FAAB`],
+    ["Most trades", T.most_active, t => `${t.n} trades${t.tied > 1 ? ` (${t.tied}-way tie)` : ""}`],
+  ].filter(([, t]) => t);
+  const sides = x => x.sides.map(s => `<div><b>${esc(s.manager)}</b> got ${s.received.map(a => `${a.kind === "player" ? posBadge(a.pos) + " " : ""}${pName(a)}`).join(", ") || "nothing"}${s.faab ? ` + $${s.faab} FAAB` : ""}</div>`).join("");
+  return `<div class="card">
+    <div class="row spread"><div><h1>Season wrapped <span class="muted">· ${W.season}${so}</span></h1>
+        <p class="muted">${esc(W.league || "")}: ${W.n_teams} teams, ${W.weeks} regular-season weeks${W.playoff_weeks ? `, ${W.playoff_weeks} of playoffs` : ""}. Play the recap, then dig into the numbers below.</p></div>
+      <div class="row"><select id="wr-season" aria-label="Season">${seasons.map(s => `<option value="${s.season}" ${s.season === W.season ? "selected" : ""}>${s.season}${s.done ? "" : " (so far)"}</option>`).join("")}</select>
+        <button class="primary" id="wr-play">▶ Play the ${W.season} recap</button></div></div>
+    <div class="tiles" style="margin-top:12px">
+      ${W.champion ? `<div class="tile mine"><div class="k">Champion</div><div class="v">${esc(W.champion.manager)}</div><div class="d muted">${esc(W.champion.record || "")}${W.champion.final ? ` · won the final by ${num2(W.champion.final.margin)}` : ""}</div></div>`
+        : S[0] ? `<div class="tile"><div class="k">Leading</div><div class="v">${esc(S[0].manager)}</div><div class="d muted">${S[0].w}-${S[0].l}</div></div>` : ""}
+      <div class="tile"><div class="k">Points scored</div><div class="v">${fmt(W.totals.points)}</div><div class="d muted">${W.totals.games} regular-season games</div></div>
+      <div class="tile"><div class="k">Pickups</div><div class="v">${W.totals.pickups}</div><div class="d muted">$${fmt(W.totals.faab)} FAAB spent</div></div>
+      <div class="tile"><div class="k">Trades</div><div class="v">${W.totals.trades}</div><div class="d muted">${T.most_active ? `most: ${esc(T.most_active.manager)}${T.most_active.tied > 1 ? ` (tied, ${T.most_active.tied} teams)` : ""}` : "none"}</div></div>
+      ${g.high[0] ? `<div class="tile"><div class="k">Highest score</div><div class="v">${num2(g.high[0].points)}</div><div class="d muted">${esc(g.high[0].manager)}, wk ${g.high[0].week}</div></div>` : ""}
+      ${g.close[0] ? `<div class="tile"><div class="k">Closest game</div><div class="v">${num2(g.close[0].margin)}</div><div class="d muted">${esc(g.close[0].manager)} over ${esc(g.close[0].opp)}</div></div>` : ""}
+    </div></div>
+  <div class="card"><h2>Standings</h2><div class="scroll"><table>
+    <thead><tr><th class="num">#</th><th>Manager</th><th>Record</th><th class="num">Points</th><th class="num">Against</th><th class="num">${hint("Max PF", HELP.maxPf)}</th><th class="num">${hint("All-play wins", HELP.allPlay)}</th><th class="num">${hint("Luck", HELP.luck)}</th>
+      <th class="num">${hint("Lineups", HELP.coachPct)}</th><th class="num">${hint("Benched", HELP.benchPts)}</th><th class="num">${hint("Lineup losses", HELP.lineupLosses)}</th><th class="num">Moves</th><th class="num">FAAB</th><th class="num">Trades</th><th class="num">Streak</th></tr></thead>
+    <tbody>${S.map(t => `<tr${mark(t)}><td class="num">${t.rank}</td><td><b>${esc(t.manager)}</b>${W.champion && t.user_id === W.champion.user_id ? ' <span class="badge acc-Likely">champion</span>' : ""}</td>
+      <td data-sort="${t.w + 0.5 * t.t}">${t.w}-${t.l}${t.t ? "-" + t.t : ""}</td><td class="num">${num1(t.pf)} <span class="muted small">#${t.pf_rank}</span></td><td class="num">${num1(t.pa)}</td>
+      <td class="num" data-sort="${t.max_pf}">${num1(t.max_pf)} <span class="muted small">#${t.max_pf_rank}</span></td><td class="num">${num1(t.allplay_w)}</td><td class="num ${signCls(t.luck)}">${t.luck > 0 ? "+" : ""}${num1(t.luck)}</td>
+      <td class="num">${t.coach_pct != null ? num1(t.coach_pct) + "%" : "–"}</td><td class="num">${num1(t.bench_pts)}</td>
+      <td class="num" ${t.lineup_losses.length ? tipAttr(t.lineup_losses.map(x => `Wk ${x.week} vs ${x.opp}: lost by ${num2(x.lost_by)}, best lineup ${num2(x.best)}`).join("\n")) : ""}>${t.lineup_losses.length}</td>
+      <td class="num">${t.moves}</td><td class="num">$${t.faab}</td><td class="num">${t.trades}</td><td class="num">${t.streak}</td></tr>`).join("")}</tbody></table></div></div>
+  ${W.champion ? `<div class="card"><h2>${hint("Butterfly effect", HELP.butterfly)}</h2>${(W.butterfly || []).length
+    ? `<div class="grid g2">${W.butterfly.map(b => `<div><h3>Week ${b.week}: ${esc(b.new_champion)} would be champion</h3><ol class="bf-chain">${bfLines(b).map(l => `<li>${l}</li>`).join("")}</ol></div>`).join("")}</div>`
+    : `<p class="muted">No single lineup swap would have changed the champion. ${esc(W.champion.manager)} earned it.</p>`}</div>` : ""}
+  <div class="grid g2">
+    <div class="card"><h2>Awards</h2><table data-nosort><tbody>${awards.map(([k, t, f]) => `<tr${mark(t)}><td class="small muted">${k}</td><td><b>${esc(t.manager)}</b></td><td class="num small">${f(t)}</td></tr>`).join("")}</tbody></table></div>
+    <div class="card"><h2>Games</h2>
+      <h3>Highest scores</h3><table data-nosort><tbody>${g.high.map(x => gameRow(x, x => num2(x.points))).join("")}</tbody></table>
+      <h3>Biggest blowouts</h3><table data-nosort><tbody>${g.blowouts.map(x => gameRow(x, x => "+" + num2(x.margin))).join("")}</tbody></table>
+      <h3>Closest games</h3><table data-nosort><tbody>${g.close.map(x => gameRow(x, x => "+" + num2(x.margin))).join("")}</tbody></table>
+      <h3>Lowest scores</h3><table data-nosort><tbody>${g.low.map(x => gameRow(x, x => num2(x.points))).join("")}</tbody></table></div>
+  </div>
+  <div class="grid g2">
+    <div class="card"><h2>Players</h2>
+      <h3>Most points started</h3><table data-nosort><tbody>${P.top.map((p, i) => `<tr><td class="num muted small">${i + 1}</td><td>${posBadge(p.pos)} ${pName(p)}</td><td class="num">${num1(p.points)}</td></tr>`).join("")}</tbody></table>
+      <h3>Best single games</h3><table data-nosort><tbody>${P.best_games.map(p => `<tr${mark(p)}><td>${posBadge(p.pos)} ${pName(p)} <span class="muted small">${esc(p.manager)}</span></td><td class="num">${num2(p.points)}</td><td class="small muted">wk ${p.week}</td></tr>`).join("")}</tbody></table></div>
+    <div class="card"><h2>Each team's MVP</h2><table data-nosort><tbody>${P.mvp.map(m => `<tr${mark(m)}><td><b>${esc(m.manager)}</b></td><td>${posBadge(m.pos)} ${pName(m)}</td><td class="num">${num1(m.points)}</td><td class="small muted">${m.starts} starts</td></tr>`).join("")}</tbody></table>
+      <p class="muted small">Most points in that team's starting lineup.</p></div>
+  </div>
+  <div class="grid g2">
+    <div class="card"><h2>Best pickup by team</h2><table data-nosort><thead><tr><th>Manager</th><th>Player</th><th class="num">${hint("Points", HELP.pickupPts)}</th><th class="num">Cost</th></tr></thead>
+      <tbody>${K.best.map(p => `<tr${mark(p)}><td><b>${esc(p.manager)}</b></td><td>${posBadge(p.pos)} ${pName(p)} <span class="muted small">${p.week ? `wk ${p.week}` : "offseason"}</span></td><td class="num">${num1(p.points)}</td><td class="num">${p.bid ? "$" + p.bid : "free"}</td></tr>`).join("") || '<tr><td class="muted">No pickups started a game.</td></tr>'}</tbody></table></div>
+    <div class="card"><h2>Biggest bids</h2><table data-nosort><tbody>${K.bids.map(p => `<tr${mark(p)}><td><b>${esc(p.manager)}</b></td><td>${posBadge(p.pos)} ${pName(p)}</td><td class="num">$${p.bid}</td><td class="num small muted">${num1(p.points)} pts</td></tr>`).join("") || '<tr><td class="muted">No bids.</td></tr>'}</tbody></table>
+      <p class="muted small">Points: what he scored in their lineup the rest of the season.</p></div>
+  </div>
+  <div class="card"><h2>${hint(`Trades (${T.list.length})`, HELP.fleece)}</h2>${T.list.length ? `<div class="scroll"><table data-nosort><tbody>${T.list.map(x => `<tr class="${T.fleece && x.id === T.fleece.id ? "me" : ""}"><td class="small">${esc(x.date)}<div class="muted">${x.week ? `wk ${x.week}` : "offseason"}</div></td>
+      <td class="small">${sides(x)}</td><td class="num small">${x.winner ? `<b>${esc(x.winner)}</b> +${fmt(x.gap)}<div class="muted">${num1(x.pct)}% of the deal</div>` : '<span class="muted">even</span>'}</td></tr>`).join("")}</tbody></table></div>
+      ${T.fleece ? `<p class="muted small">Highlighted: the biggest fleece of the season.</p>` : ""}` : '<p class="muted">No trades this season.</p>'}</div>
+  ${D ? `<div class="card"><h2>${esc(D.label)}</h2>
+    <p>${D.first ? `First pick: ${posBadge(D.first.pos)} ${pName(D.first)} to <b>${esc(D.first.manager)}</b>.` : ""} ${D.n} picks, valued on draft day and today.</p>
+    <div class="grid g2"><div><h3>Steals</h3><table data-nosort><tbody>${D.steals.map(p => `<tr><td>${posBadge(p.pos)} ${pName(p)} <span class="muted small">${esc(p.manager)} · #${p.pick_no}</span></td><td class="num delta-pos">+${fmt(p.change)}</td></tr>`).join("")}</tbody></table></div>
+      <div><h3>Busts</h3><table data-nosort><tbody>${D.busts.map(p => `<tr><td>${posBadge(p.pos)} ${pName(p)} <span class="muted small">${esc(p.manager)} · #${p.pick_no}</span></td><td class="num delta-neg">${fmt(p.change)}</td></tr>`).join("")}</tbody></table></div></div></div>` : ""}`;
+}
+
+function wireWrapped(W) {
+  const sel = $("#wr-season");
+  if (sel) sel.onchange = () => (location.hash = `#/wrapped/${sel.value}`);
+  const play = $("#wr-play");
+  if (play) play.onclick = () => playWrapped(W);
+}
+
+// Recap effects: a background scene behind each slide, all CSS animation (pauses with the show,
+// skipped with reduced motion). Each takes (W, slide, d), d = when the big number lands, in seconds.
+const WR_BALL = `<svg viewBox="0 0 64 36" aria-hidden="true"><path d="M2 18Q32-9 62 18Q32 45 2 18Z" fill="#7c3f17" stroke="#3b1d0a" stroke-width="1.5"/><path d="M11 9Q6 18 11 27M53 9Q58 18 53 27" stroke="#f5f5f4" stroke-width="2.2" fill="none"/><path d="M23 18h18M26 14.5v7M30 14.5v7M34 14.5v7M38 14.5v7" stroke="#f5f5f4" stroke-width="2" stroke-linecap="round"/></svg>`;
+const fxR = (a, b) => (a + Math.random() * (b - a)).toFixed(2);
+const fxPick = a => a[Math.floor(Math.random() * a.length)];
+const fxMany = (n, f) => Array.from({ length: n }, (_, k) => f(k)).join("");
+const fxFall = (n, d, glyph, o = {}) => `<div class="fx-fall">${fxMany(n, () => `<i style="left:${fxR(-4, 98)}%;font-size:${fxR(o.min || 22, o.max || 54)}px;--dx:${fxR(-10, 10)}vw;--r:${fxR(-(o.rot ?? 360), o.rot ?? 360)}deg;animation-duration:${fxR(o.t1 || 4, o.t2 || 7)}s;animation-delay:${fxR(d, d + (o.spread || 5))}s">${glyph()}</i>`)}</div>`;
+const fxThrow = (d, t = 2.6) => `<div class="fx-throw" style="--d:${d}s;--t:${t}s"><div class="fx-arc"><div class="fx-spin">${WR_BALL}</div></div></div>`;
+const fxBursts = (n, d) => fxMany(n, () => {
+  const c = fxPick(["#fde68a", "#f9a8d4", "#93c5fd", "#86efac", "#fca5a5", "#c4b5fd", "#ffffff"]), dd = fxR(d, d + 3), t = fxR(1.8, 2.8), r = fxR(12, 22);
+  return `<div class="fx-burst" style="left:${fxR(8, 92)}%;top:${fxR(10, 60)}%">${fxMany(16, k => `<i style="--a:${k * 22.5}deg;--c:${c};--r:${r}vmin;animation-delay:${dd}s;animation-duration:${t}s"></i>`)}</div>`;
+});
+const WR_BEAM = o => `<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="wr-beam-${String(o).replace(".", "")}" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0" stop-color="#fff" stop-opacity="${o}"/><stop offset=".78" stop-color="#fff" stop-opacity="0"/></linearGradient></defs><polygon points="46,0 54,0 100,100 0,100" fill="url(#wr-beam-${String(o).replace(".", "")})"/></svg>`;
+const fxBeams = (o = 0.28) => `<div class="fx-beam" style="left:-14vw;--a1:-30deg;--a2:6deg">${WR_BEAM(o)}</div><div class="fx-beam" style="left:80vw;--a1:30deg;--a2:-6deg;animation-delay:-1.6s">${WR_BEAM(o)}</div>`;
+const WR_SUN = (() => {
+  let p = "";
+  const pt = deg => `${(100 * Math.cos(deg * Math.PI / 180)).toFixed(1)} ${(100 * Math.sin(deg * Math.PI / 180)).toFixed(1)}`;
+  for (let k = 0; k < 20; k++) p += `M0 0L${pt(k * 18)}L${pt(k * 18 + 6)}Z`;
+  return `<svg viewBox="-100 -100 200 200" aria-hidden="true"><defs><radialGradient id="wr-sun-g" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="100">
+    <stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset=".7" stop-color="#fff" stop-opacity="0"/></radialGradient></defs><path d="${p}" fill="url(#wr-sun-g)"/></svg>`;
+})();
+const fxSun = d => `<div class="fx-sun" style="animation-delay:0s,${d}s">${WR_SUN}</div>`;
+// A chalkboard play: X's and O's, then the routes draw in.
+function fxPlay(d) {
+  const O = [[140, 160], [165, 160], [190, 160], [215, 160], [240, 160], [190, 188], [60, 160], [330, 160], [265, 160], [190, 218]];
+  const X = [[152, 128], [178, 128], [204, 128], [230, 128], [140, 98], [195, 94], [250, 98], [62, 118], [328, 118], [128, 46], [262, 46]];
+  const R = [[[60, 160], [60, 78], [112, 42]], [[330, 160], [330, 92], [288, 92]], [[265, 160], [265, 122], [334, 102]], [[190, 218], [118, 218], [86, 182]]];
+  let k = 0;
+  const at = () => `style="animation-delay:${(d + 0.05 * k++).toFixed(2)}s"`;
+  const o = O.map(([x, y]) => `<circle class="fx-chalk" cx="${x}" cy="${y}" r="7" ${at()}/>`).join("");
+  const x = X.map(([x, y]) => `<path class="fx-chalk" d="M${x - 6} ${y - 6}l12 12m0-12l-12 12" ${at()}/>`).join("");
+  const r = R.map((pts, j) => {
+    const [p, q] = pts.slice(-2), a = Math.atan2(q[1] - p[1], q[0] - p[0]), t0 = d + 1.3 + j * 0.45;
+    const h = t => `${(q[0] + 11 * Math.cos(a + t)).toFixed(1)} ${(q[1] + 11 * Math.sin(a + t)).toFixed(1)}`;
+    return `<path class="fx-route" pathLength="1" d="M${pts.map(p => p.join(" ")).join("L")}" style="animation-delay:${t0.toFixed(2)}s"/>
+      <path class="fx-chalk" d="M${h(2.6)}L${q.join(" ")}L${h(-2.6)}" style="animation-delay:${(t0 + 0.75).toFixed(2)}s"/>`;
+  }).join("");
+  return `<svg class="fx-play" viewBox="0 0 400 240" aria-hidden="true">${o}${x}${r}</svg>`;
+}
+// A heart monitor, one beat per 1.1s (the number beats along with it).
+function fxEkg() {
+  let p = "M0 100";
+  for (let x = 0; x < 1200; x += 300) p += `L${x + 150} 100l12-25l12 50l12-120l14 150l12-55l10 0`;
+  p += "L1200 100";
+  return `<svg class="fx-ekg" viewBox="0 0 1200 200" preserveAspectRatio="none" aria-hidden="true"><path class="base" d="${p}"/><path class="pen" pathLength="1" d="${p}"/></svg>`;
+}
+const WR_FX = {
+  field: (W, s, d) => `<div class="fx-field">${fxMany(12, k => `<i style="animation-delay:${(-k * 12 / 12).toFixed(2)}s"></i>`)}</div>${fxThrow(d + 0.3)}${fxThrow(d + 3.4, 2.4)}`,
+  butterfly: () => `<div class="fx-fly">${fxMany(10, () => `<i style="top:${fxR(5, 88)}%;font-size:${fxR(22, 46)}px;animation-duration:${fxR(10, 17)}s;animation-delay:${fxR(-14, 1)}s"><b style="animation-duration:${fxR(0.16, 0.28)}s">🦋</b></i>`)}</div>`,
+  points: (W, s, d) => `<div class="fx-rise">${fxMany(28, () => `<i class="fx-chip" style="left:${fxR(2, 92)}%;--dx:${fxR(-4, 4)}vw;font-size:${fxR(18, 46)}px;animation-duration:${fxR(3, 6)}s;animation-delay:${fxR(d - 1, d + 4)}s">${fxPick(["+6", "+6", "+6", "+3", "+2", "+1", "+4", "+0.5", "+1.2"])}</i>`)}</div>`,
+  spot: () => fxBeams(),
+  fire: (W, s, d) => `<div class="fx-heat"></div><div class="fx-rise">${fxMany(46, () => `<i class="fx-ember" style="left:${fxR(0, 100)}%;--dx:${fxR(-8, 8)}vw;--s:${fxR(3, 9)}px;animation-duration:${fxR(2.2, 4.6)}s;animation-delay:${fxR(-2, 3)}s"></i>`)}${fxMany(7, () => `<i class="fx-emoji" style="left:${fxR(4, 94)}%;--dx:${fxR(-3, 3)}vw;font-size:${fxR(28, 56)}px;animation-duration:${fxR(3.5, 5.5)}s;animation-delay:${fxR(d, d + 4)}s">🔥</i>`)}</div>`,
+  fireworks: (W, s, d) => fxBursts(7, d),
+  blowout: (W, s, d) => fxMany(3, k => `<div class="fx-ring" style="animation-delay:${(d + 0.35 + k * 0.16).toFixed(2)}s"></div>`)
+    + `<div class="fx-streaks">${fxMany(16, () => `<i style="top:${fxR(4, 96)}%;width:${fxR(10, 32)}vw;animation-duration:${fxR(0.45, 1)}s;animation-delay:${fxR(d + 0.3, d + 1.5)}s"></i>`)}</div>`,
+  ekg: () => fxEkg(),
+  waivers: (W, s, d) => {
+    const names = [...new Set([...W.pickups.best, ...W.pickups.bids].map(p => p.name))];
+    return names.length ? fxFall(Math.min(28, names.length * 3), d, () => `<span class="fx-pill">+ ${esc(fxPick(names))}</span>`, { min: 13, max: 20, rot: 18, t1: 5, t2: 9, spread: 6 }) : "";
+  },
+  money: (W, s, d) => fxFall(48, d, () => fxPick(["<b>$</b>", "<b>$</b>", "<b>$</b>", "💵", "💵", "💰"]), { min: 26, max: 66, t1: 3, t2: 6, spread: 4 }),
+  sparkle: (W, s, d) => `<div class="fx-twinkle">${fxMany(36, () => `<i style="left:${fxR(2, 97)}%;top:${fxR(2, 95)}%;font-size:${fxR(10, 36)}px;animation-duration:${fxR(1.6, 3)}s;animation-delay:${fxR(d - 1, d + 3)}s">✦</i>`)}</div>`,
+  ticker: W => {
+    const names = [...new Set(W.trades.list.flatMap(t => t.sides.flatMap(x => x.received.map(a => a.name))))].filter(Boolean);
+    if (!names.length) return "";
+    return fxMany(4, k => {
+      const seq = [];
+      while (seq.length < 14) seq.push(...[...names].sort(() => Math.random() - 0.5));
+      const txt = seq.slice(0, 14).map(esc).join(" ⇄ ") + " ⇄ ";
+      return `<div class="fx-lane${k % 2 ? " rev" : ""}" style="top:${7 + k * 24}%;animation-duration:${fxR(30, 44)}s"><span>${txt}</span><span>${txt}</span></div>`;
+    });
+  },
+  sheep: (W, s, d) => `<div class="fx-sheep">${fxMany(12, k => `<i style="animation-delay:${(k * 0.75 - 2.5).toFixed(2)}s;font-size:${fxR(44, 84)}px;bottom:${fxR(2, 14)}vh"><b style="animation-delay:-${fxR(0, 0.5)}s">🐑</b></i>`)}</div>`,
+  flash: (W, s, d) => fxBeams(0.18) + `<div class="fx-flash">${fxMany(16, () => `<i style="left:${fxR(3, 97)}%;top:${fxR(5, 95)}%;animation-duration:${fxR(1.6, 3.4)}s;animation-delay:${fxR(0, 3)}s"></i>`)}</div>`,
+  clover: (W, s, d) => fxFall(30, d, () => fxPick(["🍀", "🍀", "🍀", "🍀", "🎲"]), { min: 24, max: 52, t1: 5, t2: 9 }),
+  rain: () => `<div class="fx-rain">${fxMany(80, () => `<i style="left:${fxR(-10, 125)}%;animation-duration:${fxR(0.6, 1.1)}s;animation-delay:${fxR(-1, 1)}s;opacity:${fxR(0.25, 0.75)}"></i>`)}</div>`,
+  sun: (W, s, d) => fxSun(d),
+  play: (W, s, d) => fxPlay(d),
+  champ: (W, s, d) => `<div class="fx-drum"></div><div class="fx-white" style="animation-delay:${d}s"></div>${fxSun(d)}${fxBursts(7, d + 0.4)}
+    <div class="fx-trophy" style="animation-delay:${d + 0.2}s,${d + 1.2}s">🏆</div>`,
+  kick: (W, s, d) => `<svg class="fx-posts" viewBox="0 0 100 120" aria-hidden="true"><path d="M50 120V62M14 62H86M14 62V2M86 62V2"/></svg>
+    <div class="fx-kick" style="--d:${d}s"><div class="fx-kick-y"><div class="fx-tumble">${WR_BALL}</div></div></div>
+    <div class="fx-good" style="animation-delay:${d + 1.35}s">It's good!</div>`,
+};
+
+// The slides, built from the season's stats. Each: { kicker, big, count?, sub, extra, ms, reveal?, confetti?,
+// fx? (a WR_FX scene), theme? (background colors), bigFx? (an entrance for the number), shine?, shake? }.
+function wrappedSlides(W) {
+  const out = [], so = W.done ? "" : " so far";
+  const add = s => out.push({ ms: 6500, ...s });
+  const g = W.games, P = W.players, K = W.pickups, T = W.trades, L = W.lineups, D = W.draft;
+  const me = W.standings.find(t => t.user_id === W.me);
+  add({ fx: "field", kicker: esc(W.league || "Your league"), big: String(W.season), sub: `Wrapped${so}`, extra: `${W.n_teams} teams. ${W.weeks} weeks. ${W.totals.games} games.<br>Here's how it went.`, ms: 5000 });
+  add({ fx: "points", kicker: "Together, the league scored", count: { to: W.totals.points, f: v => fmt(v) }, sub: "points", extra: `About ${num1(W.totals.points / Math.max(W.totals.games * 2, 1))} per team, per week.` });
+  if (P.top[0]) add({ fx: "spot", kicker: "No one was started for more points than", big: esc(P.top[0].name), text: true, sub: `${num1(P.top[0].points)} points`,
+    extra: `Then ${P.top.slice(1, 3).map(p => `${esc(p.name)} (${num1(p.points)})`).join(" and ")}.` });
+  if (P.best_games[0]) { const b = P.best_games[0]; add({ fx: "fire", theme: ["#3b0a0a", "#c2410c"], kicker: "The best single game of the season", count: { to: b.points, f: num2 }, sub: `points from ${esc(b.name)}`, extra: `Week ${b.week}, for ${esc(b.manager)}.` }); }
+  if (g.high[0]) { const x = g.high[0]; add({ fx: "fireworks", kicker: "The highest score of the year", count: { to: x.points, f: num2 }, sub: `${esc(x.manager)}, week ${x.week}`, extra: `${esc(x.opp)} put up ${num2(x.opp_points)} and never stood a chance.` }); }
+  if (g.blowouts[0]) { const x = g.blowouts[0]; add({ fx: "blowout", bigFx: "wr-slam", shake: true, kicker: "The biggest blowout", count: { to: x.margin, f: num2 }, sub: "points of daylight", extra: `${esc(x.manager)} ${num2(x.points)}, ${esc(x.opp)} ${num2(x.opp_points)}. Week ${x.week}.` }); }
+  if (g.close[0]) { const x = g.close[0]; add({ fx: "ekg", bigFx: "wr-beat", theme: ["#2a0612", "#9f1239"], kicker: "And the closest call", count: { to: x.margin, f: num2 }, sub: "points", extra: `${esc(x.manager)} edged ${esc(x.opp)} ${num2(x.points)} to ${num2(x.opp_points)} in week ${x.week}${x.playoffs ? ", in the playoffs" : ""}.` }); }
+  add({ fx: "waivers", kicker: "The waiver wire was busy", count: { to: W.totals.pickups, f: v => fmt(v) }, sub: "pickups", extra: `$${fmt(W.totals.faab)} of FAAB spent.${K.most_active ? ` ${esc(K.most_active.manager)} made the most moves (${K.most_active.n}).` : ""}` });
+  if (K.bids[0]) { const b = K.bids[0]; add({ fx: "money", theme: ["#052e16", "#166534"], kicker: "The biggest bid", count: { to: b.bid, f: v => "$" + fmt(v) }, sub: `${esc(b.manager)} on ${esc(b.name)}`, extra: b.points >= 50 ? `It paid off: ${num1(b.points)} points in their lineup.` : `What it bought: ${num1(b.points)} points in their lineup.` }); }
+  if (K.best[0]) { const b = K.best[0]; add({ fx: "sparkle", shine: true, theme: ["#1e0b3b", "#6d28d9"], kicker: "The pickup of the year", big: esc(b.name), text: true, sub: `${num1(b.points)} points for ${esc(b.manager)}`, extra: `${b.bid ? `Cost: $${b.bid}.` : "Cost: nothing. Free agent."} ${b.week ? `Picked up in week ${b.week}.` : "Picked up in the offseason."}` }); }
+  if (T.list.length) add({ fx: "ticker", kicker: "Deals were made", count: { to: T.list.length, f: v => fmt(v) }, sub: T.list.length === 1 ? "trade" : "trades", extra: T.most_active ? (T.most_active.tied > 1 ? `${T.most_active.tied} managers tied for the most, with ${T.most_active.n} each.` : `${esc(T.most_active.manager)} was the busiest dealer, with ${T.most_active.n}.`) : "" });
+  if (T.fleece) { const f = T.fleece; add({ fx: "sheep", theme: ["#0c2a3a", "#0e7490"], kicker: "The fleece of the year", big: esc(f.winner), text: true, sub: `won the deal by ${fmt(f.gap)} in value (${num1(f.pct)}%)`, ms: 8000,
+    extra: f.sides.map(s => `<div class="wr-side"><b>${esc(s.manager)}</b> got ${s.received.map(a => esc(a.name)).join(", ") || "nothing"}</div>`).join("") + '<div class="wr-note">By today\'s values</div>' }); }
+  if (D && D.first) add({ fx: "flash", theme: ["#0b0b12", "#3f3f46"], kicker: esc(D.label), big: esc(D.first.name), text: true, sub: `went first overall, to ${esc(D.first.manager)}`,
+    extra: [D.steals[0] && D.steals[0].change > 0 ? `Steal: ${esc(D.steals[0].name)} at #${D.steals[0].pick_no}, up ${fmt(D.steals[0].change)}.` : "",
+      D.busts[0] && D.busts[0].change < 0 ? `Ouch: ${esc(D.busts[0].name)} at #${D.busts[0].pick_no}, down ${fmt(-D.busts[0].change)}.` : ""].filter(Boolean).join("<br>") });
+  if (W.luck.lucky && W.luck.unlucky) add({ fx: "clover", theme: ["#022c22", "#047857"], kicker: "Lady luck had favorites", big: esc(W.luck.lucky.manager), text: true, sub: `won ${num1(W.luck.lucky.luck)} more games than their scores deserved`,
+    extra: `${esc(W.luck.unlucky.manager)} got the opposite: ${num1(-W.luck.unlucky.luck)} wins short of their all-play pace.` });
+  if (L.most_bench) add({ fx: "rain", theme: ["#0b1120", "#334155"], kicker: "Set it and regret it", count: { to: L.most_bench.bench_pts, f: num1 }, sub: `points left on ${esc(L.most_bench.manager)}'s bench`,
+    extra: L.best_coach ? `Best lineup setter: ${esc(L.best_coach.manager)}, at ${num1(L.best_coach.coach_pct)}% of the best possible.` : "" });
+  if (me) {
+    const mvp = P.mvp.find(m => m.user_id === W.me), pk = K.best.find(p => p.user_id === W.me);
+    add({ fx: "field", kicker: "Now, about you", big: `#${me.rank}`, sub: `${me.w}-${me.l}${me.t ? "-" + me.t : ""} · ${num1(me.pf)} points (#${me.pf_rank} in the league)`,
+      extra: me.luck <= -1 ? `The schedule wasn't kind: ${num1(-me.luck)} fewer wins than your scores earned.` : me.luck >= 1 ? `Luck was on your side: ${num1(me.luck)} more wins than your scores earned.` : "Your record matched your scores." });
+    if (mvp) add({ fx: "sun", shine: true, kicker: "Your MVP", big: esc(mvp.name), text: true, sub: `${num1(mvp.points)} points in ${mvp.starts} starts`, extra: pk ? `Best pickup: ${esc(pk.name)}, ${num1(pk.points)} points${pk.bid ? ` for $${pk.bid}` : " for free"}.` : "" });
+    add({ fx: "play", theme: ["#0d1f17", "#1f4d36"], kicker: "Your lineups", count: { to: me.coach_pct || 0, f: v => num1(v) + "%" }, sub: "of your best possible lineup, started",
+      extra: me.lineup_losses.length ? `${me.lineup_losses.length} loss${me.lineup_losses.length === 1 ? "" : "es"} your best lineup would have won. ${num1(me.bench_pts)} points on the bench.` : "Not one loss your bench could have saved." });
+  }
+  if (W.champion) {
+    const c = W.champion;
+    add({ kicker: `And your ${W.season} champion is…`, big: esc(c.manager), text: true, reveal: true, confetti: true, ms: 9500, theme: ["#1c1206", "#a16207"], fx: "champ", shine: true,
+      sub: `${c.record ? c.record + (c.seed ? `, the ${c.seed} seed` : "") : ""}`,
+      extra: c.final ? `Beat ${esc(c.final.opp)} ${num2(c.final.points)} to ${num2(c.final.opp_points)} in the final.` : "" });
+    const b = (W.butterfly || [])[0];
+    if (b) add({ fx: "butterfly", theme: ["#0b1d2e", "#0e7490"], kicker: "But it all hinged on", count: { to: Math.abs(b.swing), f: num1 }, ms: 17000,
+      sub: `points. One lineup call in week ${b.week}, and ${esc(b.new_champion)} is the champion instead.`,
+      extra: `<div class="wr-chain">${bfLines(b).map((l, k) => `<div class="wr-a" style="--d:${(2.6 + k * 1.6).toFixed(1)}s">${l}</div>`).join("")}</div>` });
+  } else if (W.standings[0]) {
+    const t = W.standings[0];
+    add({ fx: "sun", kicker: "Leading the way so far", big: esc(t.manager), text: true, sub: `${t.w}-${t.l}, ${num1(t.pf)} points`, extra: "The season isn't over yet." });
+  }
+  add({ fx: "kick", kicker: `That's a wrap on ${W.season}${so}`, big: "Thanks for playing", text: true, sub: "", extra: '<div class="wr-btns"><button class="primary" data-wr="explore">Explore the stats</button><button data-wr="again">Watch again</button></div>', ms: 60000, end: true });
+  return out;
+}
+
+function playWrapped(W) {
+  const slides = wrappedSlides(W);
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const stage = document.createElement("div");
+  stage.className = "wr-stage";
+  stage.setAttribute("role", "dialog");
+  stage.setAttribute("aria-modal", "true");
+  stage.setAttribute("aria-label", `${W.season} season recap`);
+  stage.innerHTML = `<div class="wr-bars">${slides.map(() => "<i><b></b></i>").join("")}</div>
+    <div class="wr-top"><button class="wr-icon" data-wr="pause" aria-label="Pause">❚❚</button><button class="wr-icon" data-wr="close" aria-label="Close">✕</button></div>
+    <div class="wr-fx" aria-hidden="true"></div><div class="wr-slide" aria-live="polite"></div><div class="wr-confetti" aria-hidden="true"></div>
+    <div class="wr-hint">Tap the right side for next, the left for back</div>`;
+  document.body.appendChild(stage);
+  document.body.style.overflow = "hidden";
+  let i = -1, timer = null, left = 0, started = 0, paused = false;
+  const bars = [...stage.querySelectorAll(".wr-bars b")];
+  const body = stage.querySelector(".wr-slide"), confetti = stage.querySelector(".wr-confetti"), fx = stage.querySelector(".wr-fx");
+  const close = () => { clearTimeout(timer); document.removeEventListener("keydown", key); stage.remove(); document.body.style.overflow = ""; };
+  const arm = ms => { clearTimeout(timer); left = ms; started = performance.now(); timer = setTimeout(() => show(i + 1), ms); };
+  const setPaused = p => {
+    paused = p;
+    stage.classList.toggle("paused", p);
+    stage.querySelector('[data-wr="pause"]').textContent = p ? "▶" : "❚❚";
+    stage.querySelector('[data-wr="pause"]').setAttribute("aria-label", p ? "Play" : "Pause");
+    if (p) { clearTimeout(timer); left -= performance.now() - started; } else arm(left);
+  };
+  function show(n) {
+    if (n >= slides.length) return close();
+    i = Math.max(0, n);
+    const s = slides[i], [c1, c2] = s.theme || WR_THEMES[i % WR_THEMES.length];
+    stage.style.background = `radial-gradient(120% 90% at 20% 10%, ${c2}, ${c1})`;
+    bars.forEach((b, k) => { b.style.animation = "none"; b.style.width = k < i ? "100%" : "0"; });
+    const cur = bars[i];
+    void cur.offsetWidth;
+    cur.style.animation = `wr-fill ${s.ms}ms linear forwards`;
+    const delay = s.reveal ? 2.6 : 0.5;
+    fx.innerHTML = !calm && WR_FX[s.fx] ? WR_FX[s.fx](W, s, delay) : "";
+    body.innerHTML = `<div class="wr-in ${s.end ? "wr-end" : ""} ${s.shake && !calm ? "wr-shake" : ""}" style="--sd:${delay + 0.4}s">
+      <div class="wr-kicker wr-a" style="--d:0s">${s.kicker}</div>
+      <div class="wr-big ${s.text ? "wr-text" : ""} wr-a ${s.reveal ? "wr-pop" : ""} ${s.bigFx || ""}" style="--d:${delay}s">${s.count ? s.count.f(0) : s.shine ? `<span class="wr-shine">${s.big}</span>` : s.big}</div>
+      ${s.sub ? `<div class="wr-sub wr-a" style="--d:${delay + 0.6}s">${s.sub}</div>` : ""}
+      ${s.extra ? `<div class="wr-extra wr-a" style="--d:${delay + 1.2}s">${s.extra}</div>` : ""}</div>`;
+    confetti.innerHTML = "";
+    if (s.count) {
+      const el = body.querySelector(".wr-big");
+      if (calm) el.textContent = s.count.f(s.count.to);
+      else setTimeout(() => {
+        const t0 = performance.now(), dur = 1400;
+        const tick = now => {
+          if (!el.isConnected) return;
+          const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+          el.textContent = s.count.f(Math.round(s.count.to * e * 100) / 100);
+          if (k < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }, delay * 1000);
+    }
+    if (s.confetti && !calm) setTimeout(() => {
+      if (!confetti.isConnected || slides[i] !== s) return;
+      const colors = ["#fde68a", "#f9a8d4", "#93c5fd", "#86efac", "#fca5a5", "#c4b5fd"];
+      confetti.innerHTML = Array.from({ length: 90 }, () => `<i style="left:${Math.random() * 100}%;background:${colors[Math.floor(Math.random() * colors.length)]};
+        --dx:${(Math.random() - 0.5) * 30}vw;--r:${Math.random() * 720}deg;animation-delay:${Math.random() * 0.8}s;animation-duration:${2.8 + Math.random() * 2}s"></i>`).join("");
+    }, delay * 1000);
+    body.querySelectorAll("[data-wr]").forEach(b => b.onclick = e => {
+      e.stopPropagation();
+      if (b.dataset.wr === "explore") close(); else show(0);
+    });
+    if (paused) setPaused(false);
+    arm(s.ms);
+  }
+  const key = e => {
+    if (e.key === "Escape") close();
+    else if (e.key === "ArrowRight") show(i + 1);
+    else if (e.key === "ArrowLeft") show(i - 1);
+    else if (e.key === " ") { e.preventDefault(); setPaused(!paused); }
+  };
+  document.addEventListener("keydown", key);
+  stage.addEventListener("click", e => {
+    const b = e.target.closest("[data-wr]");
+    if (b) { if (b.dataset.wr === "close") close(); else if (b.dataset.wr === "pause") setPaused(!paused); return; }
+    if (e.target.closest("button, a")) return;
+    if (e.clientX < innerWidth * 0.3) show(i - 1); else show(i + 1);
+  });
+  show(0);
+  stage.querySelector('[data-wr="close"]').focus();
 }
 
 // ---------------------------------------------------------------- navigation
@@ -2991,7 +3412,7 @@ const ICONS = {
 };
 const SECTIONS = [
   { id: "home", label: "Home", pages: [["#/", "Dashboard"], ["#/matchup", "Matchup"], ["#/lineup", "Lineup"], ["#/calendar", "Calendar"], ["#/offseason", "Offseason"], ["#/track", "Track record"]] },
-  { id: "league", label: "League", pages: [["#/rankings", "Rankings"], ["#/season", "Playoff odds"], ["#/future", "Timeline"], ["#/team", "Teams"], ["#/recap", "Weekly recap"], ["#/records", "Record book"]] },
+  { id: "league", label: "League", pages: [["#/rankings", "Rankings"], ["#/season", "Playoff odds"], ["#/future", "Timeline"], ["#/team", "Teams"], ["#/recap", "Weekly recap"], ["#/wrapped", "Wrapped"], ["#/records", "Record book"]] },
   { id: "trades", label: "Trades", pages: [["#/partners", "Find trades"], ["#/trade", "Evaluate"], ["#/plan", "Plan"], ["#/deadline", "Deadline"], ["#/secondhalf", "Second half"], ["#/prices", "League prices"], ["#/history", "Trade history"]] },
   { id: "players", label: "Players", pages: [["#/players", "Rostered"], ["#/breakouts", "Breakouts"], ["#/buylow", "Buy low"], ["#/pickups", "Free agents"], ["#/waivers", "Pickup history"]] },
   { id: "draft", label: "Draft", pages: [["#/draftday", "Draft day"], ["#/draftprep", "Upcoming draft"], ["#/hitrates", "Hit rates"], ["#/roster", "Roster room"], ["#/drafts", "Past drafts"]] },
@@ -3378,6 +3799,7 @@ const ROUTES = [
   [/^#\/recap(?:\/(\d+))?$/, viewRecap], [/^#\/roster$/, viewRoster], [/^#\/hitrates$/, viewHitRates], [/^#\/calendar$/, viewCalendar], [/^#\/lineup(?:\/(\d+))?$/, viewLineup], [/^#\/secondhalf(?:\/(\d+))?$/, viewSecondHalf], [/^#\/plan$/, viewPlan],
   [/^#\/track$/, viewTrack], [/^#\/draftday(\/replay)?(?:\/(\d+))?$/, viewDraftDay], [/^#\/offseason$/, viewOffseason],
   [/^#\/matchup(?:\/(\d+))?(?:\/(\d+))?$/, viewMatchup],
+  [/^#\/wrapped(?:\/(\d+))?$/, viewWrapped],
   [/^#\/settings$/, viewSettings],
 ];
 async function route() {

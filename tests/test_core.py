@@ -697,3 +697,45 @@ def test_typical_rookie_class_mix():
     assert t["r12"] == {"QB": 1, "RB": 1, "WR": 1.5, "TE": 0.5}
     assert t["share"]["QB"] == round((90 / 200 + 40 / 200) * 100 / 2, 1)
     assert rookieclass.typical(None, 2) is None
+
+
+def test_wrapped_best_lineup_and_leaders():
+    from app import wrapped
+    pool = [("q1", "QB", 20), ("q2", "QB", 18), ("r1", "RB", 15), ("r2", "RB", 12), ("w1", "WR", 9)]
+    # QB and RB first, then the flex takes the best RB/WR left, the superflex the best of anyone left.
+    assert wrapped._best_lineup(["QB", "RB", "FLEX", "SUPER_FLEX"], pool) == 20 + 15 + 12 + 18
+    st = [{"manager": "a", "user_id": 1, "trades": 3}, {"manager": "b", "user_id": 2, "trades": 1}, {"manager": "c", "user_id": 3, "trades": 3}]
+    assert wrapped._leader(st, "trades") == {"manager": "a", "user_id": 1, "n": 3, "tied": 2}
+    assert wrapped._leader([], "trades") is None
+
+
+def test_wrapped_butterfly_replays_the_season(monkeypatch):
+    from app import records, wrapped
+    # Four teams, two regular-season weeks, the top two meet in a one-week final (week 3).
+    S = {"league": {"league_id": "L", "settings": {"playoff_teams": 2, "playoff_round_type": 0}}, "playoff_start": 3,
+         "owners": {1: "a", 2: "b", 3: "c", 4: "d"}}
+    monkeypatch.setattr(records, "winners_bracket", lambda lid, done: [{"m": 1, "r": 1, "p": 1, "t1": 1, "t2": 2, "w": 1, "l": 2}])
+    g = lambda w, a, b, pa, pb: {"week": w, "playoffs": w >= 3, "a": a, "b": b, "pa": pa, "pb": pb}
+    games = [g(1, "a", "b", 100, 90), g(1, "c", "d", 80, 79), g(2, "a", "c", 100, 95), g(2, "b", "d", 99, 98), g(3, "a", "b", 110, 100)]
+    scores = {(x[k], x["week"]): x["p" + k] for x in games for k in "ab"} | {("c", 3): 130, ("d", 3): 50}
+    standings = [{"user_id": u, "rank": i + 1} for i, u in enumerate("abcd")]
+    # c lost week 2 by 5 with a 12-point WR on the bench behind a 5-point starter.
+    detail = {("c", 2): ([("WR", "p1", 5.0)], [("p2", "WR", 12.0)])}
+    out = wrapped._butterfly(S, games, scores, detail, standings, "a", nm=str.upper, pname=lambda p: p)
+    assert len(out) == 1
+    b = out[0]
+    assert (b["user_id"], b["week"], b["swing"], b["new_champion_id"]) == ("c", 2, 7.0, "c")
+    assert {(m["user_id"], m["from"], m["to"]) for m in b["moved"]} == {("c", None, 1), ("a", 1, 2), ("b", 2, None)}
+    assert b["fate"]["opp_id"] == "c" and b["fate"]["round"] == "final"  # c beats a 130-110 in the final
+
+
+def test_goal_plan_values_and_pools():
+    from types import SimpleNamespace
+    from app import goalplan
+    lg = SimpleNamespace(season=2026, slots=["QB", "RB", "WR", "FLEX"])
+    pick = {"kind": "pick", "id": "2027-1-1", "season": 2027, "value": 5000}
+    vet = {"kind": "player", "id": "1", "pos": "RB", "value": 2000, "redraft": 6000}
+    now = goalplan._Goal(lg, 0)
+    assert now.val(pick) == 0 and not now.plays(pick)  # picks don't score this season
+    assert now.val(vet) == 6000 and now.worth(vet) == 2000  # win now: production in the lineup, dynasty value as roster value
+    assert goalplan._mix([1, 2, 3, 4], [4, 3, 2, 1], 3) == [1, 4, 2]
